@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>ZipShelf</title>
+<style>
+  :root { color-scheme: dark; --acc: #f08c3a; --acc-dk: #c9722c; --thumb: 120px; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; width: 100%;
+    background: #000; color: #eee; overflow: hidden;
+    font-family: -apple-system, "Hiragino Kaku Gothic ProN", sans-serif;
+    user-select: none; -webkit-user-select: none;
+  }
+  #stage {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: #000;
+  }
+  #pic {
+    max-width: 100%; max-height: 100%;
+    object-fit: contain; display: none;
+    -webkit-touch-callout: none;
+  }
+  /* タップ領域（左/中/右） */
+  .zone { position: fixed; top: 0; bottom: 0; width: 33.33%; z-index: 5; }
+  #zoneL { left: 0; }
+  #zoneC { left: 33.33%; }
+  #zoneR { right: 0; }
+
+  /* スタート画面（本棚） */
+  #start {
+    position: fixed; inset: 0; z-index: 30;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    gap: 16px; padding: calc(24px + env(safe-area-inset-top)) 18px 24px;
+    background: radial-gradient(circle at 50% 35%, #1d150e, #000);
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
+  #start h1 { margin: 0; font-size: 30px; letter-spacing: 2px; font-weight: 600; }
+  #start p { margin: 0; opacity: .6; font-size: 14px; line-height: 1.7; }
+  .btn {
+    appearance: none; border: none; border-radius: 14px;
+    padding: 16px 30px; font-size: 17px; font-weight: 600;
+    background: var(--acc); color: #fff;
+  }
+  .btn:active { background: var(--acc-dk); }
+  #picker { display: none; }
+  #nossl {
+    display: none; max-width: 480px; font-size: 13px; line-height: 1.7;
+    background: rgba(226,96,63,.15); border: 1px solid rgba(226,96,63,.5);
+    border-radius: 12px; padding: 12px 16px;
+  }
+
+  /* 本棚一覧 */
+  #shelfWrap { width: 100%; max-width: 92vw; }
+  .swrow {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; font-size: 13px; opacity: .85; margin-bottom: 10px;
+  }
+  #countLbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sortbtns { display: flex; gap: 6px; flex-shrink: 0; }
+  .sortb {
+    appearance: none; border: none; border-radius: 8px;
+    background: rgba(255,255,255,.12); color: #ddd;
+    padding: 7px 10px; font-size: 12px; white-space: nowrap;
+  }
+  .sortb.on { background: var(--acc); color: #fff; }
+  #shelfList {
+    max-height: 62vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fill, var(--thumb));
+    justify-content: center;
+  }
+  .card {
+    appearance: none; border: none; background: none; padding: 0;
+    color: #eee; width: var(--thumb);
+    display: flex; flex-direction: column; gap: 5px; align-items: center;
+  }
+  .thumb {
+    position: relative;
+    width: var(--thumb); height: var(--thumb); border-radius: 10px;
+    background: #222 center/cover no-repeat;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 42px; overflow: hidden;
+  }
+  .card:active .thumb { outline: 3px solid var(--acc); }
+  /* 編集モード：✕バッジ */
+  #shelfList.editing .thumb::after {
+    content: "✕"; position: absolute; top: 4px; right: 4px;
+    width: 26px; height: 26px; border-radius: 50%;
+    background: #e2603f; color: #fff; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cap {
+    width: 100%; font-size: 12px; line-height: 1.25; text-align: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .sub { width: 100%; font-size: 10px; opacity: .55; text-align: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #shelfEmpty { display: none; opacity: .5; font-size: 13px; padding: 14px; text-align: center; }
+  #storeLine { font-size: 11px; opacity: .45; text-align: center; margin-top: 10px; }
+
+  /* コントロールバー */
+  #ctrl {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+    background: linear-gradient(to top, rgba(0,0,0,.85), rgba(0,0,0,0));
+    display: none; flex-direction: column; gap: 12px;
+    transition: opacity .25s; opacity: 1;
+  }
+  #ctrl.hidden { opacity: 0; pointer-events: none; }
+  .row { display: flex; align-items: center; gap: 14px; justify-content: center; }
+  .ic {
+    appearance: none; border: none; background: rgba(255,255,255,.12);
+    color: #fff; width: 54px; height: 54px; border-radius: 50%;
+    font-size: 22px; display: flex; align-items: center; justify-content: center;
+  }
+  .ic:active { background: rgba(255,255,255,.28); }
+  .ic.big { width: 66px; height: 66px; font-size: 28px; }
+  .ic.on { background: var(--acc); }
+  .slider { display: flex; align-items: center; gap: 10px; width: 100%; max-width: 460px; margin: 0 auto; }
+  .slider input { flex: 1; }
+  .slider label { font-size: 13px; opacity: .8; min-width: 64px; }
+  #info {
+    position: fixed; top: calc(8px + env(safe-area-inset-top)); left: 0; right: 0;
+    text-align: center; font-size: 13px; opacity: .65; z-index: 20;
+    text-shadow: 0 1px 3px #000; transition: opacity .25s; pointer-events: none;
+  }
+  #info.hidden { opacity: 0; }
+  /* スライドショーのカウントダウンゲージ（下端） */
+  #gauge {
+    position: fixed; left: 0; right: 0; bottom: env(safe-area-inset-bottom);
+    height: 3px; z-index: 18; background: rgba(255,255,255,.14);
+    display: none; pointer-events: none;
+  }
+  #gaugeFill { height: 100%; width: 0%; background: var(--acc); }
+  /* 設定パネル（下からのシート） */
+  #settings {
+    position: fixed; inset: 0; z-index: 35;
+    display: flex; align-items: flex-end; justify-content: center;
+    background: rgba(0,0,0,.5);
+  }
+  #settings.hidden { display: none; }
+  #settings .panel {
+    width: 100%; max-width: 520px;
+    background: #181818; border-radius: 18px 18px 0 0;
+    padding: 22px 22px calc(22px + env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .set-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 14px; font-size: 16px;
+  }
+  .set-row.col { flex-direction: column; align-items: stretch; gap: 12px; }
+  .set-row.col input { width: 100%; }
+  .set-row b { color: #ffb066; }
+  #settings .btn { align-self: center; margin-top: 4px; }
+
+  #loading {
+    position: fixed; inset: 0; z-index: 40; display: none;
+    align-items: center; justify-content: center; flex-direction: column; gap: 16px;
+    background: rgba(0,0,0,.9); font-size: 16px;
+  }
+  #loadTxt { max-width: 86vw; text-align: center; line-height: 1.6; word-break: break-all; }
+  .spin {
+    width: 40px; height: 40px; border-radius: 50%;
+    border: 4px solid rgba(255,255,255,.2); border-top-color: var(--acc);
+    animation: sp 1s linear infinite;
+  }
+  @keyframes sp { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div id="stage"><img id="pic" alt=""></div>
+
+<div class="zone" id="zoneL"></div>
+<div class="zone" id="zoneC"></div>
+<div class="zone" id="zoneR"></div>
+
+<div id="info"></div>
+<div id="gauge"><div id="gaugeFill"></div></div>
+
+<div id="start">
+  <h1>ZipShelf</h1>
+  <div id="nossl">⚠ この環境ではストレージ機能が使えません。<br>HTTPS（GitHub Pages 等）または localhost で開いてください。</div>
+  <div id="shelfWrap">
+    <div class="swrow">
+      <span id="countLbl">📚 0冊</span>
+      <span class="sortbtns">
+        <button class="sortb" id="sortName">名前</button>
+        <button class="sortb" id="sortDate">追加日</button>
+        <button class="sortb" id="editBtn">編集</button>
+      </span>
+    </div>
+    <div id="shelfList"></div>
+    <div id="shelfEmpty">まだ何もありません。<br>下の「zip を取り込む」で本棚に追加してください。</div>
+    <div id="storeLine"></div>
+  </div>
+  <button class="btn" id="openBtn">zip を取り込む</button>
+  <p style="font-size:12px">複数選択OK / 端末に保存され、オフラインでも読めます</p>
+  <input type="file" id="picker" accept=".zip,.cbz,application/zip" multiple>
+</div>
+
+<div id="loading"><div class="spin"></div><div id="loadTxt">読み込み中...</div></div>
+
+<div id="ctrl">
+  <div class="slider">
+    <input type="range" id="seek" min="0" max="0" value="0" step="1">
+    <label id="seekLbl">0 / 0</label>
+  </div>
+  <div class="row">
+    <button class="ic" id="prevBtn">⏮</button>
+    <button class="ic big" id="playBtn">⏸</button>
+    <button class="ic" id="nextBtn">⏭</button>
+    <button class="ic" id="gearBtn" title="設定">⚙</button>
+    <button class="ic" id="newBtn" title="本棚へ戻る">📚</button>
+  </div>
+</div>
+
+<!-- 設定パネル -->
+<div id="settings" class="hidden">
+  <div class="panel">
+    <div class="set-row">
+      <span>右から左へ読む</span>
+      <button class="ic" id="rtlBtn" title="右から左へ">📖</button>
+    </div>
+    <div class="set-row">
+      <span>ループ</span>
+      <button class="ic" id="loopBtn" title="ループ">🔁</button>
+    </div>
+    <div class="set-row">
+      <span>シャッフル</span>
+      <button class="ic" id="shufBtn" title="シャッフル">🔀</button>
+    </div>
+    <div class="set-row">
+      <span>カウントダウンゲージ</span>
+      <button class="ic" id="gaugeBtn" title="ゲージ表示">⏳</button>
+    </div>
+    <div class="set-row col">
+      <span>自動切り替え：<b id="spdLbl">3.0 秒</b></span>
+      <input type="range" id="speed" min="5" max="150" value="30" step="1">
+    </div>
+    <button class="btn" id="setClose">閉じる</button>
+  </div>
+</div>
+
+<script src="zip.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
