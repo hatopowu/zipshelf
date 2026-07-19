@@ -159,6 +159,7 @@
     items.forEach(function (it) { names[it.name] = 1; });
     Object.keys(meta).forEach(function (k) { if (!names[k]) delete meta[k]; });
     saveMeta();
+    shelfNames = names;   // サーバ取込ブラウザの「✓取込済」判定用
 
     $("countLbl").textContent = "📚 " + items.length + "冊";
     box.innerHTML = "";
@@ -301,6 +302,189 @@
       console.error(e);
       return null;   // サムネ無しで続行
     }
+  }
+
+  // ---- サーバ取込（serve.py の https ポートをブラウズして DL → 本棚へ）----
+  var srvUrl = localStorage.getItem("zsh_srv") || "";
+  var srvDir = "";
+  var shelfNames = {};       // 取込済み判定（renderShelf で更新）
+  var srvThumbUrls = [];
+  var srvThumbQueue = [];
+  var srvThumbBusy = false;
+  var srvThumbGen = 0;       // フォルダ移動・クローズでサムネ生成を打ち切る世代
+
+  function encPath(p) { return p.split("/").map(encodeURIComponent).join("/"); }
+  function joinPath(a, b) { return a ? a + "/" + b : b; }
+
+  function askSrvUrl() {
+    var v = prompt("PCサーバのURL（serve.py の https ポート）",
+                   srvUrl || "https://192.168.11.15:8443");
+    if (!v) return false;
+    v = v.trim().replace(/\/+$/, "");
+    if (!/^https:\/\//i.test(v)) {
+      alert("https:// で始まるURLが必要です（http は混在コンテンツとしてブロックされます）");
+      return false;
+    }
+    srvUrl = v;
+    localStorage.setItem("zsh_srv", v);
+    return true;
+  }
+
+  function openSrv() {
+    if (!srvUrl && !askSrvUrl()) return;
+    $("srv").classList.remove("hidden");
+    srvList(srvDir);
+  }
+  function closeSrv() {
+    srvThumbGen++;
+    srvThumbQueue = [];
+    srvThumbUrls.forEach(function (u) { URL.revokeObjectURL(u); });
+    srvThumbUrls = [];
+    $("srv").classList.add("hidden");
+    renderShelf();   // 取込結果を本棚へ反映
+  }
+
+  async function srvList(dir) {
+    var box = $("srvList");
+    box.innerHTML = "<div style='opacity:.5;font-size:13px;grid-column:1/-1;text-align:center'>読み込み中...</div>";
+    var data;
+    try {
+      var res = await fetch(srvUrl + "/list?dir=" + encodeURIComponent(dir || ""), { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      data = await res.json();
+    } catch (e) {
+      console.error(e);
+      box.innerHTML = "";
+      alert("サーバに接続できません。\n" +
+        "・PC で start-server.bat が動いているか\n" +
+        "・URL: " + srvUrl + " が正しいか\n" +
+        "・証明書を導入・信頼済みか（初回は Safari で http://<PCのIP>:8000/cert）\n" +
+        "を確認してください。");
+      return;
+    }
+    srvDir = data.dir || "";
+    renderSrv(data);
+  }
+
+  function renderSrv(data) {
+    srvThumbGen++;
+    srvThumbQueue = [];
+    srvThumbUrls.forEach(function (u) { URL.revokeObjectURL(u); });
+    srvThumbUrls = [];
+    $("srvPath").textContent = "📁 " + (srvDir || "(ルート)");
+    $("srvUp").style.display = srvDir ? "flex" : "none";
+    var box = $("srvList");
+    box.innerHTML = "";
+    data.dirs.forEach(function (d) {
+      var c = makeCard("📁", d.name);
+      c.querySelector(".thumb").style.background = "#2e2216";
+      c.onclick = function () { srvList(joinPath(srvDir, d.name)); };
+      box.appendChild(c);
+    });
+    var zips = data.files.filter(function (it) { return it.kind === "zip"; });
+    zips.forEach(function (it) {
+      var rel = joinPath(srvDir, it.name);
+      var c = makeCard("🗜", bookTitle(it.name));
+      c.querySelector(".sub").textContent =
+        (shelfNames[it.name] ? "✓取込済 ・ " : "") + fmtSize(it.size);
+      c.onclick = function () { srvImport(rel, it.name); };
+      box.appendChild(c);
+      srvThumbQueue.push({ card: c, path: rel, gen: srvThumbGen });
+    });
+    if (!data.dirs.length && !zips.length) {
+      var em = document.createElement("div");
+      em.style.cssText = "opacity:.5;font-size:13px;padding:8px;grid-column:1/-1;text-align:center";
+      em.textContent = "からっぽです";
+      box.appendChild(em);
+    }
+    pumpSrvThumb();
+  }
+
+  // zip の先頭画像を HTTP Range で範囲読みしてサムネにする（直列・LAN前提）
+  async function pumpSrvThumb() {
+    if (srvThumbBusy) return;
+    srvThumbBusy = true;
+    while (srvThumbQueue.length) {
+      var job = srvThumbQueue.shift();
+      if (job.gen !== srvThumbGen) continue;
+      try {
+        var reader = new zip.ZipReader(new zip.HttpRangeReader(srvUrl + "/zips/" + encPath(job.path)));
+        var entries = await reader.getEntries();
+        var first = null;
+        for (var i = 0; i < entries.length; i++) {
+          var en = entries[i];
+          if (!en.directory && IMG_RE.test(en.filename) && !/(^|\/)__MACOSX\//.test(en.filename)) {
+            if (!first || naturalCmp(en.filename, first.filename) < 0) first = en;
+          }
+        }
+        if (first && job.gen === srvThumbGen) {
+          var blob = await first.getData(new zip.BlobWriter());
+          var u = URL.createObjectURL(blob);
+          srvThumbUrls.push(u);
+          var th = job.card.querySelector(".thumb");
+          if (th) { th.textContent = ""; th.style.backgroundImage = "url('" + u + "')"; }
+        }
+        await reader.close();
+      } catch (e) { /* このzipはサムネ無しでスキップ */ }
+    }
+    srvThumbBusy = false;
+  }
+
+  async function srvImport(rel, name) {
+    if (shelfNames[name] && !confirm("「" + bookTitle(name) + "」は既にあります。上書きしますか？")) return;
+    if (!canWrite()) {
+      alert("このブラウザは端末内保存(createWritable)に未対応です。\niOS 18.2 以降 / 最新の Safari・Chrome で使えます。");
+      return;
+    }
+    $("loading").style.display = "flex";
+    $("loadTxt").textContent = "DL中 : " + name;
+    try {
+      var root = await opfsRoot();
+      var res = await fetch(srvUrl + "/zips/" + encPath(rel), { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      var total = parseInt(res.headers.get("Content-Length"), 10) || 0;
+      var fh = await root.getFileHandle(name, { create: true });
+      var w = await fh.createWritable();
+      try {
+        if (res.body) {
+          // ストリームで直接 OPFS へ（メモリに全量を持たない）
+          var rd = res.body.getReader();
+          var got = 0;
+          for (;;) {
+            var r = await rd.read();
+            if (r.done) break;
+            await w.write(r.value);
+            got += r.value.byteLength;
+            if (total) $("loadTxt").textContent = "DL中 : " + name + " (" + Math.round(got / total * 100) + "%)";
+          }
+        } else {
+          await w.write(await res.blob());   // ストリーム非対応環境の保険
+        }
+        await w.close();
+      } catch (e) {
+        try { await w.abort(); } catch (e2) {}
+        throw e;
+      }
+      $("loadTxt").textContent = "サムネ作成中 : " + name;
+      var saved = await (await root.getFileHandle(name)).getFile();
+      var tb = await makeThumb(saved);
+      if (tb) {
+        var td = await thumbsDir(true);
+        var th = await td.getFileHandle(thumbName(name), { create: true });
+        var tw = await th.createWritable();
+        await tw.write(tb);
+        await tw.close();
+      }
+      meta[name] = { added: Date.now(), size: saved.size, pos: 0, total: 0 };
+      saveMeta();
+      shelfNames[name] = 1;
+      toast("取込完了: " + bookTitle(name));
+      srvList(srvDir);   // ✓表示を更新
+    } catch (e) {
+      console.error(e);
+      alert("取込失敗: " + name + "\n" + e.message);
+    }
+    $("loading").style.display = "none";
   }
 
   // ---- 本を開く ----
@@ -541,6 +725,14 @@
     e.target.value = "";   // 同じファイルを再選択できるように
   };
   $("newBtn").onclick = backToShelf;                 // 📚 = 本棚へ戻る
+  $("srvBtn").onclick = openSrv;
+  $("srvClose").onclick = closeSrv;
+  $("srvReload").onclick = function () { srvList(srvDir); };
+  $("srvUp").onclick = function () {
+    var parent = srvDir.indexOf("/") >= 0 ? srvDir.slice(0, srvDir.lastIndexOf("/")) : "";
+    srvList(parent);
+  };
+  $("srvCfg").onclick = function () { if (askSrvUrl()) srvList(srvDir); };
   $("sortName").onclick = function () { setSort("name"); };
   $("sortDate").onclick = function () { setSort("date"); };
   $("editBtn").onclick = function () {

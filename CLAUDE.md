@@ -25,6 +25,13 @@ OPFS・Service Worker・wakeLock はすべて **secure context(https か localho
 - `navigator.storage.persist()` を起動時に要求(追い出されにくくする)。それでも **OPFS は OS に消される可能性がゼロではない**ので、原本は PC 側に残す運用が前提(消えたら再取込)。
 - 読書位置はページめくり毎に slide index を保存。最終ページまで読んだ本は次回先頭から。
 
+## サーバ取込（🌐 ボタン）
+ZipSlide の serve.py(PC) から LAN 経由で zip を DL して本棚に保存する経路(取込のみ・ストリーミング閲覧はしない)。
+- **serve.py 側の https ポート(既定8443)+CORS が前提**。GitHub Pages(https) → serve.py(http) は混在コンテンツでブロックされるため、自己署名証明書で https 化してある(ZipSlide の `gen-cert.ps1` で生成、iPad は初回に `http://<PCのIP>:8000/cert` から証明書を導入して信頼設定)。
+- サーバ URL は初回 prompt で入力し localStorage `zsh_srv` に保存(「URL」ボタンで変更)。https 必須をバリデーション。
+- ブラウズ: `GET /list?dir=` でフォルダナビ(zip のみ表示・動画は無視)。サムネは zip.js HttpRangeReader で先頭画像を範囲読み(直列キュー・世代カウンタで打ち切り)。✓取込済み表示は本棚の名前一致。
+- DL: fetch → `res.body.getReader()` で OPFS createWritable にストリーム書き(全量をメモリに持たない・進捗%)。保存後は OPFS の実体から makeThumb(ピッカー取込と同じ経路)。
+
 ## ビューア(ZipSlide と共通の作法)
 - zip 全体を展開しない: BlobReader で目次だけ読み、表示時に該当画像のバイト範囲だけ取り出す。前後1枚先読み・離れた画像は revokeObjectURL(showToken で競合ガード)。
 - RTL 既定・タップ3分割・スワイプ・シークバー・⚙設定(RTL/ループ/シャッフル/ゲージ/秒数、localStorage `zsh_*`)・カウントダウンゲージ・wakeLock。

@@ -50,6 +50,8 @@
     background: var(--acc); color: #fff;
   }
   .btn:active { background: var(--acc-dk); }
+  .btn.sub { background: rgba(255,255,255,.14); }
+  .btn.sub:active { background: rgba(255,255,255,.28); }
   #picker { display: none; }
   #nossl {
     display: none; max-width: 480px; font-size: 13px; line-height: 1.7;
@@ -63,6 +65,7 @@
     display: flex; align-items: center; justify-content: space-between;
     gap: 10px; font-size: 13px; opacity: .85; margin-bottom: 10px;
   }
+  .swrow .ic { width: 38px; height: 38px; font-size: 18px; flex-shrink: 0; }
   #countLbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sortbtns { display: flex; gap: 6px; flex-shrink: 0; }
   .sortb {
@@ -162,6 +165,23 @@
   .set-row b { color: #ffb066; }
   #settings .btn { align-self: center; margin-top: 4px; }
 
+  /* サーバ取込ブラウザ */
+  #srv {
+    position: fixed; inset: 0; z-index: 36;
+    display: flex; flex-direction: column; gap: 4px;
+    padding: calc(20px + env(safe-area-inset-top)) 18px calc(20px + env(safe-area-inset-bottom));
+    background: #0d0a07;
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
+  #srv.hidden { display: none; }
+  #srvPath { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #srvList {
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fill, var(--thumb));
+    justify-content: center;
+  }
+  #srvHint { font-size: 11px; opacity: .45; text-align: center; margin-top: 12px; }
+
   #loading {
     position: fixed; inset: 0; z-index: 40; display: none;
     align-items: center; justify-content: center; flex-direction: column; gap: 16px;
@@ -204,8 +224,22 @@
     <div id="storeLine"></div>
   </div>
   <button class="btn" id="openBtn">zip を取り込む</button>
+  <button class="btn sub" id="srvBtn">🌐 サーバから取り込む</button>
   <p style="font-size:12px">複数選択OK / 端末に保存され、オフラインでも読めます</p>
   <input type="file" id="picker" accept=".zip,.cbz,application/zip" multiple>
+</div>
+
+<!-- サーバ取込ブラウザ（serve.py の https ポートから DL） -->
+<div id="srv" class="hidden">
+  <div class="swrow">
+    <button class="ic" id="srvUp" title="上へ" style="display:none">⬆</button>
+    <span id="srvPath">📁 (ルート)</span>
+    <button class="sortb" id="srvCfg">URL</button>
+    <button class="ic" id="srvReload" title="更新">⟳</button>
+    <button class="ic" id="srvClose" title="閉じる">✕</button>
+  </div>
+  <div id="srvList"></div>
+  <div id="srvHint">タップで本棚に取込み（✓=取込済み）。閲覧は本棚から。</div>
 </div>
 
 <div id="loading"><div class="spin"></div><div id="loadTxt">読み込み中...</div></div>
