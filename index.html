@@ -109,7 +109,7 @@
   #shelfEmpty { display: none; opacity: .5; font-size: 13px; padding: 14px; text-align: center; }
   #storeLine { font-size: 11px; opacity: .45; text-align: center; margin-top: 10px; }
 
-  /* コントロールバー */
+  /* コントロールバー（下） */
   #ctrl {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
     padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
@@ -118,6 +118,28 @@
     transition: opacity .25s; opacity: 1;
   }
   #ctrl.hidden { opacity: 0; pointer-events: none; }
+  /* ツールバー（上）：戻る / ファイル名 / 設定 */
+  #topbar {
+    position: fixed; left: 0; right: 0; top: 0; z-index: 20;
+    padding: calc(10px + env(safe-area-inset-top)) 12px 14px;
+    background: linear-gradient(to bottom, rgba(0,0,0,.85), rgba(0,0,0,0));
+    display: none; align-items: center; gap: 10px;
+    transition: opacity .25s; opacity: 1;
+  }
+  #topbar.hidden { opacity: 0; pointer-events: none; }
+  #backBtn {
+    appearance: none; border: none; border-radius: 10px;
+    background: rgba(255,255,255,.14); color: #fff;
+    height: 44px; padding: 0 14px; font-size: 15px; font-weight: 600;
+    flex-shrink: 0;
+  }
+  #backBtn:active { background: rgba(255,255,255,.28); }
+  #bookTitle {
+    flex: 1; min-width: 0; text-align: center; font-size: 14px; opacity: .85;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    text-shadow: 0 1px 3px #000;
+  }
+  .ic.sm { width: 44px; height: 44px; font-size: 19px; flex-shrink: 0; }
   .row { display: flex; align-items: center; gap: 14px; justify-content: center; }
   .ic {
     appearance: none; border: none; background: rgba(255,255,255,.12);
@@ -244,6 +266,12 @@
 
 <div id="loading"><div class="spin"></div><div id="loadTxt">読み込み中...</div></div>
 
+<div id="topbar">
+  <button id="backBtn">◁ 戻る</button>
+  <span id="bookTitle"></span>
+  <button class="ic sm" id="gearBtn" title="設定">⚙</button>
+</div>
+
 <div id="ctrl">
   <div class="slider">
     <input type="range" id="seek" min="0" max="0" value="0" step="1">
@@ -253,8 +281,6 @@
     <button class="ic" id="prevBtn">⏮</button>
     <button class="ic big" id="playBtn">⏸</button>
     <button class="ic" id="nextBtn">⏭</button>
-    <button class="ic" id="gearBtn" title="設定">⚙</button>
-    <button class="ic" id="newBtn" title="本棚へ戻る">📚</button>
   </div>
 </div>
 

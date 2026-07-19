@@ -23,7 +23,15 @@
   var gaugeOn = lsBool("zsh_gauge", true);
 
   var $ = function (id) { return document.getElementById(id); };
-  var pic = $("pic"), info = $("info"), ctrl = $("ctrl");
+  var pic = $("pic"), info = $("info"), ctrl = $("ctrl"), topbar = $("topbar");
+
+  // 上下ツールバーの表示は常にペアで切り替える
+  function setBars(vis) {
+    ctrl.classList.toggle("hidden", !vis);
+    topbar.classList.toggle("hidden", !vis);
+    if (vis) { clearTimeout(infoTimer); info.classList.add("hidden"); }  // バー表示中はシークラベルが n/N を兼ねる
+  }
+  function barsVisible() { return !ctrl.classList.contains("hidden"); }
 
   function naturalCmp(a, b) {
     return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
@@ -548,10 +556,12 @@
     }
     pic.style.display = "block";
     ctrl.style.display = "flex";
+    topbar.style.display = "flex";
+    $("bookTitle").textContent = bookTitle(curBook);
     show();
     pause();   // 初期は自動再生オフ（▶で開始）
     // 開いた直後はUIを隠す（中央タッチで表示）
-    ctrl.classList.add("hidden");
+    setBars(false);
     info.classList.add("hidden");
   }
 
@@ -561,6 +571,7 @@
     pic.style.display = "none";
     pic.removeAttribute("src");
     ctrl.style.display = "none";
+    topbar.style.display = "none";
     $("settings").classList.add("hidden");
     clearCache();
     slides = []; order = []; curBook = "";
@@ -633,11 +644,10 @@
 
   var infoTimer = null;
   function flashInfo() {
+    if (barsVisible()) return;   // バー表示中は下バーの n/N と重複するので出さない
     info.classList.remove("hidden");
     clearTimeout(infoTimer);
-    infoTimer = setTimeout(function () {
-      if (playing) info.classList.add("hidden");
-    }, 1500);
+    infoTimer = setTimeout(function () { info.classList.add("hidden"); }, 1500);
   }
 
   function next(byUser) {
@@ -689,7 +699,7 @@
     restartTimer();
     updateGauge();
     requestWake();
-    setTimeout(function () { if (playing) ctrl.classList.add("hidden"); }, 1800);
+    setTimeout(function () { if (playing) setBars(false); }, 1800);
   }
 
   function pause() {
@@ -698,8 +708,7 @@
     clearInterval(timer);
     updateGauge();
     releaseWake();
-    ctrl.classList.remove("hidden");
-    info.classList.remove("hidden");
+    setBars(true);
   }
 
   function togglePlay() { playing ? pause() : play(); }
@@ -724,7 +733,7 @@
     importFiles(e.target.files);
     e.target.value = "";   // 同じファイルを再選択できるように
   };
-  $("newBtn").onclick = backToShelf;                 // 📚 = 本棚へ戻る
+  $("backBtn").onclick = backToShelf;                // ◁ 戻る = 本棚へ
   $("srvBtn").onclick = openSrv;
   $("srvClose").onclick = closeSrv;
   $("srvReload").onclick = function () { srvList(srvDir); };
@@ -795,13 +804,10 @@
     if (e.target === $("settings")) $("settings").classList.add("hidden");
   };
 
-  // タップ領域（RTL時は左端で進む）
-  $("zoneL").onclick = function () { rtl ? next(true) : prev(); };
-  $("zoneR").onclick = function () { rtl ? prev() : next(true); };
-  $("zoneC").onclick = function () {
-    ctrl.classList.toggle("hidden");
-    info.classList.toggle("hidden", ctrl.classList.contains("hidden"));
-  };
+  // タップ領域（RTL時は左端で進む）。頁を切り替えたらツールバーは閉じる
+  $("zoneL").onclick = function () { setBars(false); rtl ? next(true) : prev(); };
+  $("zoneR").onclick = function () { setBars(false); rtl ? prev() : next(true); };
+  $("zoneC").onclick = function () { setBars(!barsVisible()); };
 
   // スワイプ
   var sx = 0, sy = 0;
@@ -812,6 +818,7 @@
     var dx = e.changedTouches[0].clientX - sx;
     var dy = e.changedTouches[0].clientY - sy;
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+      setBars(false);   // 頁切替でツールバーを閉じる
       // RTL: 右スワイプで進む（左から次ページが現れる）
       var goNext = rtl ? (dx > 0) : (dx < 0);
       goNext ? next(true) : prev();
