@@ -1,12 +1,14 @@
 // オフライン起動用 Service Worker。
 // 方針＝ネットワーク優先(常に最新)・失敗時のみキャッシュ(オフライン起動)。
 // ASSETS を増減したら VER を上げること。
-var VER = "zipshelf-v1";
+var VER = "zipshelf-v2";
 var ASSETS = [
   "./",
   "./index.html",
   "./app.js",
   "./zip.min.js",
+  "./pdf.min.js",
+  "./pdf.worker.min.js",
   "./manifest.webmanifest",
   "./icon.svg",
   "./apple-touch-icon.png"

@@ -2,19 +2,76 @@
   "use strict";
 
   var IMG_RE = /\.(jpe?g|png|gif|webp|bmp|avif)$/i;
-  var ZIP_RE = /\.(zip|cbz)$/i;
+  var PDF_RE = /\.pdf$/i;
+  var BOOK_RE = /\.(zip|cbz|pdf)$/i;
   var THUMB_PX = 320;          // 本棚サムネの長辺
   var WRITE_CHUNK = 8 * 1024 * 1024;
+  var MAX_CANVAS_PX = 16e6;    // iOS Safari の canvas 面積上限（超えると真っ白になる）
 
-  var slides = [];      // { name, entry } ← entry は zip.js のエントリ（遅延展開）
+  // { name, entry } ← zip はエントリ（遅延展開）／ pdf は { name, page } でページ番号だけ持つ
+  var slides = [];
   var order = [];       // 表示順（index の配列）
   var pos = 0;          // order 内の現在位置
   var urlCache = {};    // slideIndex -> objectURL（現在地付近のみ保持して省メモリ）
   var showToken = 0;    // 非同期表示の競合ガード
   var playing = false;
-  var curBook = "";     // 開いている zip 名（読書位置の保存キー）
+  var curBook = "";     // 開いている本の名前（読書位置の保存キー）
+  var curPdf = null;    // 開いている PDFDocumentProxy（pdf のときだけ）
   var timer = null;
   var wakeLock = null;
+
+  // ---- pdf.js（PDF を開くときだけ読み込む。同梱なのでオフラインでも動く）----
+  var pdfjsP = null;
+  function ensurePdfjs() {
+    if (!pdfjsP) {
+      pdfjsP = new Promise(function (res, rej) {
+        var s = document.createElement("script");
+        s.src = "pdf.min.js";
+        s.onload = function () {
+          if (!window.pdfjsLib) { rej(new Error("pdf.js の初期化に失敗")); return; }
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = "pdf.worker.min.js";
+          res(window.pdfjsLib);
+        };
+        s.onerror = function () { pdfjsP = null; rej(new Error("pdf.js を読み込めません")); };
+        document.head.appendChild(s);
+      });
+    }
+    return pdfjsP;
+  }
+
+  // PDF の 1 ページを画面解像度に合わせて描画し jpeg blob にする（表示も本棚サムネも同じ経路）
+  async function renderPdfPage(doc, num, longPx, quality) {
+    var page = await doc.getPage(num);
+    var base = page.getViewport({ scale: 1 });
+    var scale = longPx / Math.max(base.width, base.height);
+    var vp = page.getViewport({ scale: scale });
+    var cw = Math.max(1, Math.round(vp.width)), ch = Math.max(1, Math.round(vp.height));
+    if (cw * ch > MAX_CANVAS_PX) {
+      var k = Math.sqrt(MAX_CANVAS_PX / (cw * ch));
+      vp = page.getViewport({ scale: scale * k });
+      cw = Math.max(1, Math.round(vp.width)); ch = Math.max(1, Math.round(vp.height));
+    }
+    var cv = document.createElement("canvas");
+    cv.width = cw; cv.height = ch;
+    var cx = cv.getContext("2d");
+    cx.fillStyle = "#fff";           // PDF の背景は透明。白で塗らないと黒地に黒文字になる
+    cx.fillRect(0, 0, cw, ch);
+    await page.render({ canvasContext: cx, viewport: vp }).promise;
+    page.cleanup();
+    return await new Promise(function (res) { cv.toBlob(res, "image/jpeg", quality); });
+  }
+
+  function viewPx() {
+    var dpr = window.devicePixelRatio || 1;
+    return Math.min(2400, Math.round(Math.max(window.innerWidth, window.innerHeight) * dpr));
+  }
+
+  function closePdf() {
+    if (curPdf) {
+      try { curPdf.destroy(); } catch (e) {}
+      curPdf = null;
+    }
+  }
 
   function lsBool(k, d) { var v = localStorage.getItem(k); return v === null ? d : v === "1"; }
   var loop = lsBool("zsh_loop", false);
@@ -38,7 +95,8 @@
   function naturalCmp(a, b) {
     return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
   }
-  function bookTitle(name) { return name.replace(ZIP_RE, ""); }
+  function bookTitle(name) { return name.replace(BOOK_RE, ""); }
+  function bookIcon(name) { return PDF_RE.test(name) ? "📕" : "🗜"; }
   function fmtSize(b) {
     if (b >= 1e9) return (b / 1e9).toFixed(2) + "GB";
     if (b >= 1e6) return Math.round(b / 1e6) + "MB";
@@ -83,7 +141,7 @@
     var root = await opfsRoot();
     var items = [];
     for await (var h of root.values()) {
-      if (h.kind === "file" && ZIP_RE.test(h.name)) {
+      if (h.kind === "file" && BOOK_RE.test(h.name)) {
         var f = await h.getFile();
         items.push({
           name: h.name, size: f.size,
@@ -174,7 +232,7 @@
     $("countLbl").textContent = "📚 " + items.length + "冊";
     box.innerHTML = "";
     applySort(items).forEach(function (it) {
-      var c = makeCard("🗜", bookTitle(it.name));
+      var c = makeCard(bookIcon(it.name), bookTitle(it.name));
       var m = meta[it.name];
       var sub = fmtSize(it.size);
       if (m && m.total) sub = Math.min((m.pos | 0) + 1, m.total) + "/" + m.total + " ・ " + sub;
@@ -216,9 +274,9 @@
     }
   }
 
-  // ---- 取り込み（zip を OPFS へコピー保存）----
+  // ---- 取り込み（zip / pdf を OPFS へコピー保存）----
   async function importFiles(fileList) {
-    var files = Array.prototype.slice.call(fileList || []).filter(function (f) { return ZIP_RE.test(f.name); });
+    var files = Array.prototype.slice.call(fileList || []).filter(function (f) { return BOOK_RE.test(f.name); });
     if (!files.length) return;
     var root;
     try {
@@ -278,8 +336,9 @@
     }
   }
 
-  // 先頭画像を縮小 jpeg にして本棚サムネに使う
+  // 先頭画像（pdf は1ページ目）を縮小 jpeg にして本棚サムネに使う
   async function makeThumb(file) {
+    if (PDF_RE.test(file.name)) return makePdfThumb(file);
     try {
       var reader = new zip.ZipReader(new zip.BlobReader(file));
       var entries = await reader.getEntries();
@@ -314,6 +373,21 @@
     } catch (e) {
       console.error(e);
       return null;   // サムネ無しで続行
+    }
+  }
+
+  async function makePdfThumb(file) {
+    var doc = null;
+    try {
+      var lib = await ensurePdfjs();
+      var buf = await file.arrayBuffer();
+      doc = await lib.getDocument({ data: buf }).promise;
+      return await renderPdfPage(doc, 1, THUMB_PX, 0.8);
+    } catch (e) {
+      console.error(e);
+      return null;
+    } finally {
+      if (doc) { try { doc.destroy(); } catch (e2) {} }
     }
   }
 
@@ -506,12 +580,22 @@
     $("loading").style.display = "flex";
     $("loadTxt").textContent = "目次を読み込み中 : " + name;
     clearCache();
+    closePdf();
     slides = [];
     curBook = "";
     try {
       var root = await opfsRoot();
       var fh = await root.getFileHandle(name);
       var file = await fh.getFile();
+      if (PDF_RE.test(name)) {
+        var lib = await ensurePdfjs();
+        // pdf.js は本体を丸ごとメモリに載せる（zip の範囲読みのような遅延は効かない）
+        curPdf = await lib.getDocument({ data: await file.arrayBuffer() }).promise;
+        for (var pn = 1; pn <= curPdf.numPages; pn++) slides.push({ name: "p" + pn, page: pn });
+        curBook = name;
+        finalizeLoad();
+        return;
+      }
       // BlobReader = zip 全体を一括ロードせず、必要な範囲だけ読む
       var reader = new zip.ZipReader(new zip.BlobReader(file));
       var entries = await reader.getEntries();   // 末尾の目次だけ読む＝ほぼ一瞬
@@ -529,8 +613,9 @@
       }
     } catch (e) {
       console.error(e);
+      closePdf();
       $("loading").style.display = "none";
-      alert("読み込み失敗: " + name);
+      alert("読み込み失敗: " + name + "\n" + e.message);
       $("start").style.display = "flex";
       return;
     }
@@ -579,6 +664,7 @@
     topbar.style.display = "none";
     $("settings").classList.add("hidden");
     clearCache();
+    closePdf();
     slides = []; order = []; curBook = "";
     $("start").style.display = "flex";
     renderShelf();
@@ -598,7 +684,11 @@
   // 表示中の前後だけ展開して保持。遠い画像は解放する
   function getURL(idx) {
     if (urlCache[idx]) return Promise.resolve(urlCache[idx]);
-    return slides[idx].entry.getData(new zip.BlobWriter()).then(function (blob) {
+    var sl = slides[idx];
+    var blobP = sl.page
+      ? renderPdfPage(curPdf, sl.page, viewPx(), 0.85)
+      : sl.entry.getData(new zip.BlobWriter());
+    return blobP.then(function (blob) {
       urlCache[idx] = URL.createObjectURL(blob);
       return urlCache[idx];
     });
