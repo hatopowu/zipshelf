@@ -21,6 +21,8 @@
   var shuffle = lsBool("zsh_shuf", false);
   var rtl = lsBool("zsh_rtl", true);         // 既定オン（右から左）
   var gaugeOn = lsBool("zsh_gauge", true);
+  var gaugePosL = lsBool("zsh_gaugeposl", false);   // false=右下
+  var gaugeOp = parseInt(localStorage.getItem("zsh_gaugeop"), 10) || 100;
 
   var $ = function (id) { return document.getElementById(id); };
   var pic = $("pic"), info = $("info"), ctrl = $("ctrl"), topbar = $("topbar");
@@ -696,6 +698,14 @@
     if (gaugeOn && playing) { $("gauge").style.display = "block"; startGauge(); }
     else { $("gauge").style.display = "none"; stopGauge(); }
   }
+  function applyGaugeStyle() {
+    var g = $("gauge");
+    g.classList.toggle("posL", gaugePosL);
+    g.style.opacity = gaugeOp / 100;
+    $("gposBtn").textContent = gaugePosL ? "↙" : "↘";
+    $("gposLbl").textContent = gaugePosL ? "左下" : "右下";
+    $("gopLbl").textContent = gaugeOp + "%";
+  }
 
   function play() {
     playing = true;
@@ -813,6 +823,16 @@
     localStorage.setItem("zsh_gauge", gaugeOn ? "1" : "0");
     updateGauge();
   };
+  $("gposBtn").onclick = function () {
+    gaugePosL = !gaugePosL;
+    localStorage.setItem("zsh_gaugeposl", gaugePosL ? "1" : "0");
+    applyGaugeStyle();
+  };
+  $("gop").oninput = function () {
+    gaugeOp = parseInt($("gop").value, 10) || 100;
+    localStorage.setItem("zsh_gaugeop", String(gaugeOp));
+    applyGaugeStyle();
+  };
 
   $("speed").oninput = function () {
     $("spdLbl").textContent = ($("speed").value / 10).toFixed(1) + " 秒";
@@ -868,6 +888,8 @@
   $("gaugeBtn").classList.toggle("on", gaugeOn);
   $("speed").value = localStorage.getItem("zsh_speed") || "30";
   $("spdLbl").textContent = ($("speed").value / 10).toFixed(1) + " 秒";
+  $("gop").value = gaugeOp;
+  applyGaugeStyle();
   applyRtl();
 
   // 起動時：オフライン起動用 SW 登録＋ストレージ永続化を要求＋本棚描画

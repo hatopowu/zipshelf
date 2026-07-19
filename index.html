@@ -170,6 +170,7 @@
   #gaugeBack { fill: rgba(0,0,0,.28); }   /* 明るい画像上でも進捗が読めるように */
   #gaugeTrack { fill: none; stroke-width: 2.5; stroke: rgba(255,255,255,.15); }
   #gaugeFill { fill: none; stroke-width: 2.5; stroke: rgba(255,255,255,.5); stroke-linecap: round; }
+  #gauge.posL { right: auto; left: calc(10px + env(safe-area-inset-left)); }
   /* 設定パネル（下からのシート） */
   #settings {
     position: fixed; inset: 0; z-index: 35;
@@ -312,6 +313,14 @@
     <div class="set-row">
       <span>カウントダウンゲージ</span>
       <button class="ic" id="gaugeBtn" title="ゲージ表示">⏳</button>
+    </div>
+    <div class="set-row">
+      <span>ゲージの位置：<b id="gposLbl">右下</b></span>
+      <button class="ic" id="gposBtn" title="ゲージ位置">↘</button>
+    </div>
+    <div class="set-row col">
+      <span>ゲージの濃さ：<b id="gopLbl">100%</b></span>
+      <input type="range" id="gop" min="30" max="100" value="100" step="10">
     </div>
     <div class="set-row col">
       <span>自動切り替え：<b id="spdLbl">3.0 秒</b></span>
