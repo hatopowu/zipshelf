@@ -10,13 +10,14 @@ zip / cbz / pdf を **iPhone/iPad の端末内(OPFS)に保存**し、**オフラ
 - `zip.min.js` … @zip.js/zip.js 2.7.45 をローカル同梱(CDN 不使用=完全オフライン対応)。
 - `pdf.min.js` / `pdf.worker.min.js` … pdf.js 3.11.174(UMD版)をローカル同梱。**PDF を開く時だけ動的 script 挿入で読み込む**(ensurePdfjs)。SW の ASSETS に入れてあるのでオフラインでも初回から動く。ESM 版(4.x/5.x の .mjs)にしないのは app.js が非モジュールの素スクリプトだから。
 - `manifest.webmanifest` / `icon.svg` / `apple-touch-icon.png` … PWA 用。
-- `start-dev.bat` … PC 確認用 `py -m http.server 8010 --bind 127.0.0.1`。
+- `start-server.bat` … 動作確認用サーバ。**ZipSlide の `serve.py` を共用**(このフォルダにコピーは置かない)。`ZIPSLIDE_APP_DIR=%~dp0` で配信ルートを ZipShelf に向け、ポートは 8010/8453 にずらして ZipSlide 本体と同時起動できるようにしてある。
 
 ## 大前提: HTTPS 必須
 OPFS・Service Worker・wakeLock はすべて **secure context(https か localhost)必須**。
 - **本番 = GitHub Pages 等の https 静的ホスティング**(公開されるのはアプリコードのみ。zip データは端末内に留まる)。
-- ZipSlide の serve.py(http)配信では動かない。http で開くと本棚の代わりに警告バナー(#nossl)が出る。
-- PC 確認は `start-dev.bat` → `http://localhost:8010/`(localhost は secure context 扱い)。
+- http 配信では動かない。http で開くと本棚の代わりに警告バナー(#nossl)が出る。
+- PC 確認は `start-server.bat` → `http://localhost:8010/`(localhost は secure context 扱いなので http で可)。
+- **iPad 実機での確認**も同じ `start-server.bat` で可能: `https://<PCのIP>:8453/`(cert.pem がある時のみ。証明書は ZipSlide の `gen-cert.ps1` 生成物を共用、iPad 側の導入手順はサーバ取込と同じ)。GitHub Pages に push しなくても実機検証できる。
 
 ## ストレージ設計
 - 実体: OPFS ルート直下に zip 名そのままで保存。サムネは `thumbs/<zip名>.jpg`(取込時に先頭画像を長辺320px jpeg化)。
