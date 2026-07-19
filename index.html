@@ -163,13 +163,13 @@
     position: fixed;
     right: calc(10px + env(safe-area-inset-right));
     bottom: calc(10px + env(safe-area-inset-bottom));
-    width: 20px; height: 20px; z-index: 18;
+    width: 26px; height: 26px; z-index: 18;
     display: none; pointer-events: none;
     transform: rotate(-90deg);   /* 12時位置から時計回りに */
   }
-  #gauge circle { fill: none; stroke-width: 2.5; }
-  #gaugeTrack { stroke: rgba(255,255,255,.1); }
-  #gaugeFill { stroke: rgba(255,255,255,.3); stroke-linecap: round; }
+  #gaugeBack { fill: rgba(0,0,0,.28); }   /* 明るい画像上でも進捗が読めるように */
+  #gaugeTrack { fill: none; stroke-width: 2.5; stroke: rgba(255,255,255,.15); }
+  #gaugeFill { fill: none; stroke-width: 2.5; stroke: rgba(255,255,255,.5); stroke-linecap: round; }
   /* 設定パネル（下からのシート） */
   #settings {
     position: fixed; inset: 0; z-index: 35;
@@ -233,6 +233,7 @@
 
 <div id="info"></div>
 <svg id="gauge" viewBox="0 0 20 20">
+  <circle id="gaugeBack" cx="10" cy="10" r="10"></circle>
   <circle id="gaugeTrack" cx="10" cy="10" r="8"></circle>
   <circle id="gaugeFill" cx="10" cy="10" r="8"
           stroke-dasharray="50.27" stroke-dashoffset="50.27"></circle>

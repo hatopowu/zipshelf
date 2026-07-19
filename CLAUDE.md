@@ -5,7 +5,7 @@ zip / cbz を **iPhone/iPad の端末内(OPFS)に保存**し、**オフライン
 
 ## 構成
 - `index.html` … 画面構造 + CSS。アクセント色はオレンジ `--acc:#f08c3a`(ZipSlide の青と区別)。
-- `app.js` … 全ロジック。ビューア中核(遅延展開・前後先読み・RTL)は ZipSlide と同一、ソース層だけ OPFS。カウントダウンは ZipSlide の下端バーと違い右下の小型 SVG リング(白30%)。
+- `app.js` … 全ロジック。ビューア中核(遅延展開・前後先読み・RTL)は ZipSlide と同一、ソース層だけ OPFS。カウントダウンは ZipSlide の下端バーと違い右下の小型 SVG リング(26px・白50%+暗円盤背景)。
 - `sw.js` … Service Worker。ネットワーク優先＋失敗時キャッシュ=オフライン起動用。**ASSETS を増減したら VER を上げる**。
 - `zip.min.js` … @zip.js/zip.js 2.7.45 をローカル同梱(CDN 不使用=完全オフライン対応)。
 - `manifest.webmanifest` / `icon.svg` / `apple-touch-icon.png` … PWA 用。
