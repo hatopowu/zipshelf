@@ -677,19 +677,20 @@
     timer = setInterval(function () { next(false); }, intervalMs());
   }
 
-  // ---- カウントダウンゲージ ----
+  // ---- カウントダウンリング ----
+  var GAUGE_C = 50.27;   // 円周 2πr (r=8, viewBox 20x20)
   function startGauge() {
     var g = $("gaugeFill");
     g.style.transition = "none";
-    g.style.width = "0%";
-    void g.offsetWidth;   // リフローして巻き戻しを確定
-    g.style.transition = "width " + intervalMs() + "ms linear";
-    g.style.width = "100%";
+    g.style.strokeDashoffset = GAUGE_C;
+    void g.getBoundingClientRect();   // リフローして巻き戻しを確定(SVGにoffsetWidthは無い)
+    g.style.transition = "stroke-dashoffset " + intervalMs() + "ms linear";
+    g.style.strokeDashoffset = 0;
   }
   function stopGauge() {
     var g = $("gaugeFill");
     g.style.transition = "none";
-    g.style.width = "0%";
+    g.style.strokeDashoffset = GAUGE_C;
   }
   function updateGauge() {
     if (gaugeOn && playing) { $("gauge").style.display = "block"; startGauge(); }

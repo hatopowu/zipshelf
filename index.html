@@ -158,13 +158,18 @@
     text-shadow: 0 1px 3px #000; transition: opacity .25s; pointer-events: none;
   }
   #info.hidden { opacity: 0; }
-  /* スライドショーのカウントダウンゲージ（下端） */
+  /* スライドショーのカウントダウンリング（右下・周辺視野に入りにくい小型表示） */
   #gauge {
-    position: fixed; left: 0; right: 0; bottom: env(safe-area-inset-bottom);
-    height: 3px; z-index: 18; background: rgba(255,255,255,.14);
+    position: fixed;
+    right: calc(10px + env(safe-area-inset-right));
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    width: 20px; height: 20px; z-index: 18;
     display: none; pointer-events: none;
+    transform: rotate(-90deg);   /* 12時位置から時計回りに */
   }
-  #gaugeFill { height: 100%; width: 0%; background: var(--acc); }
+  #gauge circle { fill: none; stroke-width: 2.5; }
+  #gaugeTrack { stroke: rgba(255,255,255,.1); }
+  #gaugeFill { stroke: rgba(255,255,255,.3); stroke-linecap: round; }
   /* 設定パネル（下からのシート） */
   #settings {
     position: fixed; inset: 0; z-index: 35;
@@ -227,7 +232,11 @@
 <div class="zone" id="zoneR"></div>
 
 <div id="info"></div>
-<div id="gauge"><div id="gaugeFill"></div></div>
+<svg id="gauge" viewBox="0 0 20 20">
+  <circle id="gaugeTrack" cx="10" cy="10" r="8"></circle>
+  <circle id="gaugeFill" cx="10" cy="10" r="8"
+          stroke-dasharray="50.27" stroke-dashoffset="50.27"></circle>
+</svg>
 
 <div id="start">
   <h1>ZipShelf</h1>
