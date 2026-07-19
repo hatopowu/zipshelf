@@ -468,17 +468,17 @@
       c.onclick = function () { srvList(joinPath(srvDir, d.name)); };
       box.appendChild(c);
     });
-    var zips = data.files.filter(function (it) { return it.kind === "zip"; });
-    zips.forEach(function (it) {
+    var books = data.files.filter(function (it) { return it.kind === "zip" || it.kind === "pdf"; });
+    books.forEach(function (it) {
       var rel = joinPath(srvDir, it.name);
-      var c = makeCard("🗜", bookTitle(it.name));
+      var c = makeCard(bookIcon(it.name), bookTitle(it.name));
       c.querySelector(".sub").textContent =
         (shelfNames[it.name] ? "✓取込済 ・ " : "") + fmtSize(it.size);
       c.onclick = function () { srvImport(rel, it.name); };
       box.appendChild(c);
-      srvThumbQueue.push({ card: c, path: rel, gen: srvThumbGen });
+      srvThumbQueue.push({ card: c, path: rel, gen: srvThumbGen, kind: it.kind, mtime: it.mtime });
     });
-    if (!data.dirs.length && !zips.length) {
+    if (!data.dirs.length && !books.length) {
       var em = document.createElement("div");
       em.style.cssText = "opacity:.5;font-size:13px;padding:8px;grid-column:1/-1;text-align:center";
       em.textContent = "からっぽです";
@@ -494,6 +494,22 @@
     while (srvThumbQueue.length) {
       var job = srvThumbQueue.shift();
       if (job.gen !== srvThumbGen) continue;
+      if (job.kind === "pdf") {
+        // pdf は zip のような範囲読みができないので、サーバ側(Windowsシェル)のサムネを借りる
+        try {
+          var turl = srvUrl + "/thumb?path=" + encodeURIComponent(job.path) + "&t=" + (job.mtime || 0);
+          await new Promise(function (res, rej) {
+            var im = new Image();
+            im.onload = res; im.onerror = rej;
+            im.src = turl;
+          });
+          if (job.gen === srvThumbGen) {
+            var pth = job.card.querySelector(".thumb");
+            if (pth) { pth.textContent = ""; pth.style.backgroundImage = "url('" + turl + "')"; }
+          }
+        } catch (e) { /* サムネ無しでスキップ */ }
+        continue;
+      }
       try {
         var reader = new zip.ZipReader(new zip.HttpRangeReader(srvUrl + "/zips/" + encPath(job.path)));
         var entries = await reader.getEntries();
