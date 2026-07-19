@@ -16,8 +16,9 @@ zip / cbz / pdf を **iPhone/iPad の端末内(OPFS)に保存**し、**オフラ
 OPFS・Service Worker・wakeLock はすべて **secure context(https か localhost)必須**。
 - **本番 = GitHub Pages 等の https 静的ホスティング**(公開されるのはアプリコードのみ。zip データは端末内に留まる)。
 - http 配信では動かない。http で開くと本棚の代わりに警告バナー(#nossl)が出る。
-- PC 確認は `start-server.bat` → `http://localhost:8010/`(localhost は secure context 扱いなので http で可)。
-- **iPad 実機での確認**も同じ `start-server.bat` で可能: `https://<PCのIP>:8453/`(cert.pem がある時のみ。証明書は ZipSlide の `gen-cert.ps1` 生成物を共用、iPad 側の導入手順はサーバ取込と同じ)。GitHub Pages に push しなくても実機検証できる。
+- **PC 確認 = `http://localhost:8010/`**(`start-server.bat`)。localhost は http でも secure context 扱いなので証明書が要らない。同じ http でも `http://<PCのIP>:8010/` は secure context にならず #nossl になるので注意。
+- **iPad 実機確認 = `https://<PCのIP>:8453/`**(同じ `start-server.bat`。cert.pem がある時のみ開く。証明書は ZipSlide の `gen-cert.ps1` 生成物を共用、iPad 側の導入手順はサーバ取込と同じ)。GitHub Pages に push しなくても実機検証できる。
+- **PC のブラウザで https:8453 を開くと自己署名証明書の警告が出る**(Firefox の「異常な動作をしている可能性があります」等)。正常＝自分の証明書が公的 CA 署名でないだけ。**Firefox は Windows の証明書ストアを見ない独自ストアなので、iPad と同じ証明書を Windows に入れても消えない**。PC では素直に localhost:8010 を使う。どうしても https を見たいなら例外追加(`127.0.0.1` ではなく SAN と一致する LAN IP で開くこと)。
 
 ## ストレージ設計
 - 実体: OPFS ルート直下に zip 名そのままで保存。サムネは `thumbs/<zip名>.jpg`(取込時に先頭画像を長辺320px jpeg化)。
