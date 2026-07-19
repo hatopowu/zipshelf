@@ -177,7 +177,10 @@
       var sub = fmtSize(it.size);
       if (m && m.total) sub = Math.min((m.pos | 0) + 1, m.total) + "/" + m.total + " ・ " + sub;
       c.querySelector(".sub").textContent = sub;
-      c.onclick = function () { editing ? deleteBook(it.name) : openBook(it.name); };
+      c.onclick = function () {
+        if (lpFired) { lpFired = false; return; }   // 長押し直後のclickで誤って開かない/消さない
+        editing ? deleteBook(it.name) : openBook(it.name);
+      };
       box.appendChild(c);
       fillThumb(c.querySelector(".thumb"), it.name);
     });
@@ -744,12 +747,41 @@
   $("srvCfg").onclick = function () { if (askSrvUrl()) srvList(srvDir); };
   $("sortName").onclick = function () { setSort("name"); };
   $("sortDate").onclick = function () { setSort("date"); };
-  $("editBtn").onclick = function () {
-    editing = !editing;
+  function setEditing(v) {
+    editing = v;
     $("editBtn").textContent = editing ? "完了" : "編集";
     $("editBtn").classList.toggle("on", editing);
     $("shelfList").classList.toggle("editing", editing);
-  };
+  }
+  $("editBtn").onclick = function () { setEditing(!editing); };
+
+  // カード長押しで編集モードへ(iOSホーム画面風)。スクロールや指の移動で中断
+  var lpTimer = null, lpFired = false;
+  function lpStart(e) {
+    if (!e.target.closest(".card")) return;
+    lpFired = false;   // 前回の長押しで click が来なかった場合の取りこぼしを解消
+    clearTimeout(lpTimer);
+    lpTimer = setTimeout(function () {
+      lpFired = true;
+      if (!editing) setEditing(true);
+    }, 550);
+  }
+  function lpCancel() { clearTimeout(lpTimer); }
+  var shelfEl = $("shelfList");
+  shelfEl.addEventListener("touchstart", lpStart, { passive: true });
+  shelfEl.addEventListener("touchmove", lpCancel, { passive: true });
+  shelfEl.addEventListener("touchend", lpCancel);
+  shelfEl.addEventListener("touchcancel", lpCancel);
+  shelfEl.addEventListener("mousedown", lpStart);      // PC確認用(マウス長押し)
+  shelfEl.addEventListener("mouseup", lpCancel);
+  shelfEl.addEventListener("mouseleave", lpCancel);
+
+  // 編集モードはカード・ボタン以外の背景タップでも解除(「完了」と同じ)
+  $("start").addEventListener("click", function (e) {
+    if (!editing) return;
+    if (e.target.closest(".card") || e.target.closest("button")) return;
+    setEditing(false);
+  });
 
   $("playBtn").onclick = togglePlay;
   $("nextBtn").onclick = function () { next(true); };
