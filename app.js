@@ -158,6 +158,15 @@
   var sortKey = localStorage.getItem("zsh_sortKey") || "date";   // 既定：追加日の新しい順
   var sortAsc = localStorage.getItem("zsh_sortAsc") === "1";
 
+  var shelfFilter = "";   // 本棚の絞り込み（永続しない）
+
+  // 空白区切りのAND部分一致（本棚・サーバ取込で共用）
+  function matchName(name, q) {
+    if (!q) return true;
+    var n = name.toLowerCase();
+    return q.split(/\s+/).every(function (w) { return n.indexOf(w) >= 0; });
+  }
+
   function applySort(arr) {
     var a = arr.slice();
     a.sort(function (x, y) {
@@ -229,10 +238,10 @@
     saveMeta();
     shelfNames = names;   // サーバ取込ブラウザの「✓取込済」判定用
 
-    $("countLbl").textContent = "📚 " + items.length + "冊";
     box.innerHTML = "";
     applySort(items).forEach(function (it) {
       var c = makeCard(bookIcon(it.name), bookTitle(it.name));
+      c.dataset.name = it.name;   // 絞り込みの判定用
       var m = meta[it.name];
       var sub = fmtSize(it.size);
       if (m && m.total) sub = Math.min((m.pos | 0) + 1, m.total) + "/" + m.total + " ・ " + sub;
@@ -244,8 +253,27 @@
       box.appendChild(c);
       fillThumb(c.querySelector(".thumb"), it.name);
     });
-    $("shelfEmpty").style.display = items.length ? "none" : "block";
+    applyShelfFilter();   // 冊数ラベル・「該当なし」表示もここで更新
     updateStorageLine();
+  }
+
+  // 絞り込みは再描画せずカードの表示/非表示だけ切り替える（OPFS再読込とサムネ作り直しを避ける）
+  function applyShelfFilter() {
+    var box = $("shelfList"), total = 0, shown = 0;
+    Array.prototype.forEach.call(box.children, function (c) {
+      var nm = c.dataset && c.dataset.name;
+      if (!nm) return;
+      total++;
+      var ok = matchName(nm, shelfFilter);
+      c.style.display = ok ? "" : "none";
+      if (ok) shown++;
+    });
+    $("countLbl").textContent = "📚 " + (shelfFilter ? shown + " / " + total : total) + "冊";
+    $("shelfEmpty").innerHTML = total
+      ? "該当なし"
+      : "まだ何もありません。<br>下の「zip / pdf を取り込む」で本棚に追加してください。";
+    $("shelfEmpty").style.display = shown ? "none" : "block";
+    $("shelfFilterClear").style.display = shelfFilter ? "" : "none";
   }
 
   async function updateStorageLine() {
@@ -400,16 +428,63 @@
   var srvThumbBusy = false;
   var srvThumbGen = 0;       // フォルダ移動・クローズでサムネ生成を打ち切る世代
 
+  var srvData = null;        // 現フォルダの取得結果（再ソート・絞り込みの再描画用）
+  var srvFilter = "";        // 現フォルダ内の絞り込み（永続しない）
+  var srvSortKey = localStorage.getItem("zsh_srvSortKey") || "name";   // "name" | "date"
+  var srvSortAsc = localStorage.getItem("zsh_srvSortAsc") !== "0";
+
   function encPath(p) { return p.split("/").map(encodeURIComponent).join("/"); }
   function joinPath(a, b) { return a ? a + "/" + b : b; }
 
+  function applySrvSort(arr) {
+    var a = arr.slice();
+    a.sort(function (x, y) {
+      var r = (srvSortKey === "date") ? (x.mtime || 0) - (y.mtime || 0) : naturalCmp(x.name, y.name);
+      return srvSortAsc ? r : -r;
+    });
+    return a;
+  }
+  function setSrvSort(key) {
+    if (srvSortKey === key) srvSortAsc = !srvSortAsc;
+    else { srvSortKey = key; srvSortAsc = (key === "name"); }   // 日付は新しい順から
+    localStorage.setItem("zsh_srvSortKey", srvSortKey);
+    localStorage.setItem("zsh_srvSortAsc", srvSortAsc ? "1" : "0");
+    updateSrvSortUI();
+    if (srvData) renderSrv(srvData);
+  }
+  function updateSrvSortUI() {
+    var arw = srvSortAsc ? " ↑" : " ↓";
+    $("srvSortName").textContent = "名前" + (srvSortKey === "name" ? arw : "");
+    $("srvSortDate").textContent = "日付" + (srvSortKey === "date" ? arw : "");
+    $("srvSortName").classList.toggle("on", srvSortKey === "name");
+    $("srvSortDate").classList.toggle("on", srvSortKey === "date");
+  }
+  function setSrvFilter(v) {
+    srvFilter = v;
+    $("srvFilterClear").style.display = v ? "" : "none";
+  }
+  function clearSrvFilter() {
+    $("srvFilter").value = "";
+    setSrvFilter("");
+  }
+
+  // serve.py 自身から開いている(PC確認・LAN直開き)なら同じサーバを既定にする＝証明書不要
+  function defaultSrvUrl() {
+    return location.port ? location.origin : "https://192.168.11.15:8453";
+  }
+
   function askSrvUrl() {
-    var v = prompt("PCサーバのURL（serve.py の https ポート）",
-                   srvUrl || "https://192.168.11.15:8443");
+    var v = prompt("PCサーバのURL（serve.py のポート）", srvUrl || defaultSrvUrl());
     if (!v) return false;
     v = v.trim().replace(/\/+$/, "");
-    if (!/^https:\/\//i.test(v)) {
-      alert("https:// で始まるURLが必要です（http は混在コンテンツとしてブロックされます）");
+    if (!/^https?:\/\//i.test(v)) {
+      alert("http:// または https:// で始まるURLを入力してください");
+      return false;
+    }
+    // https のページから http は混在コンテンツでブロックされる。
+    // ページ自体が http(PC の localhost 確認)なら http のままでよい。
+    if (location.protocol === "https:" && /^http:\/\//i.test(v)) {
+      alert("このページが https なので、サーバも https:// が必要です（http は混在コンテンツとしてブロックされます）");
       return false;
     }
     srvUrl = v;
@@ -442,14 +517,21 @@
     } catch (e) {
       console.error(e);
       box.innerHTML = "";
+      // PC で serve.py 自身から開いている場合は、同一オリジンにすれば証明書の問題を丸ごと回避できる
+      var hint = (location.port && srvUrl !== location.origin)
+        ? "\n\n※ PC で確認中なら「URL」ボタンで " + location.origin +
+          " に変えると、証明書なしで繋がります。"
+        : "";
       alert("サーバに接続できません。\n" +
         "・PC で start-server.bat が動いているか\n" +
         "・URL: " + srvUrl + " が正しいか\n" +
         "・証明書を導入・信頼済みか（初回は Safari で http://<PCのIP>:8000/cert）\n" +
-        "を確認してください。");
+        "を確認してください。" + hint);
       return;
     }
+    if ((data.dir || "") !== srvDir) clearSrvFilter();   // フォルダ移動で絞り込みは解除（⟳では保持）
     srvDir = data.dir || "";
+    srvData = data;
     renderSrv(data);
   }
 
@@ -462,14 +544,17 @@
     $("srvUp").style.display = srvDir ? "flex" : "none";
     var box = $("srvList");
     box.innerHTML = "";
-    data.dirs.forEach(function (d) {
+    var dirs = data.dirs.filter(function (d) { return matchName(d.name, srvFilter); });
+    applySrvSort(dirs).forEach(function (d) {
       var c = makeCard("📁", d.name);
       c.querySelector(".thumb").style.background = "#2e2216";
       c.onclick = function () { srvList(joinPath(srvDir, d.name)); };
       box.appendChild(c);
     });
-    var books = data.files.filter(function (it) { return it.kind === "zip" || it.kind === "pdf"; });
-    books.forEach(function (it) {
+    var books = data.files.filter(function (it) {
+      return (it.kind === "zip" || it.kind === "pdf") && matchName(it.name, srvFilter);
+    });
+    applySrvSort(books).forEach(function (it) {
       var rel = joinPath(srvDir, it.name);
       var c = makeCard(bookIcon(it.name), bookTitle(it.name));
       c.querySelector(".sub").textContent =
@@ -478,10 +563,10 @@
       box.appendChild(c);
       srvThumbQueue.push({ card: c, path: rel, gen: srvThumbGen, kind: it.kind, mtime: it.mtime });
     });
-    if (!data.dirs.length && !books.length) {
+    if (!dirs.length && !books.length) {
       var em = document.createElement("div");
       em.style.cssText = "opacity:.5;font-size:13px;padding:8px;grid-column:1/-1;text-align:center";
-      em.textContent = "からっぽです";
+      em.textContent = srvFilter ? "該当なし" : "からっぽです";
       box.appendChild(em);
     }
     pumpSrvThumb();
@@ -864,6 +949,35 @@
   $("srvCfg").onclick = function () { if (askSrvUrl()) srvList(srvDir); };
   $("sortName").onclick = function () { setSort("name"); };
   $("sortDate").onclick = function () { setSort("date"); };
+  $("srvSortName").onclick = function () { setSrvSort("name"); };
+  $("srvSortDate").onclick = function () { setSrvSort("date"); };
+
+  // 本棚の絞り込み：再描画せず表示/非表示を切り替えるだけなので即時でよい
+  $("shelfFilter").oninput = function () {
+    shelfFilter = this.value.trim().toLowerCase();
+    applyShelfFilter();
+  };
+  $("shelfFilter").onkeydown = function (e) { if (e.key === "Enter") this.blur(); };
+  $("shelfFilterClear").onclick = function () {
+    $("shelfFilter").value = "";
+    shelfFilter = "";
+    applyShelfFilter();
+  };
+
+  // サーバ取込の絞り込み：こちらは再描画が要るので少し待つ（サムネ生成のやり直しを減らす）
+  var srvFiltTimer = 0;
+  $("srvFilter").oninput = function () {
+    var v = this.value.trim().toLowerCase();
+    if (v === srvFilter) return;
+    setSrvFilter(v);
+    clearTimeout(srvFiltTimer);
+    srvFiltTimer = setTimeout(function () { if (srvData) renderSrv(srvData); }, 150);
+  };
+  $("srvFilter").onkeydown = function (e) { if (e.key === "Enter") this.blur(); };
+  $("srvFilterClear").onclick = function () {
+    clearSrvFilter();
+    if (srvData) renderSrv(srvData);
+  };
   function setEditing(v) {
     editing = v;
     $("editBtn").textContent = editing ? "完了" : "編集";
@@ -1007,5 +1121,6 @@
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
   } catch (e) {}
   updateSortUI();
+  updateSrvSortUI();
   renderShelf();
 })();

@@ -74,6 +74,18 @@
     padding: 7px 10px; font-size: 12px; white-space: nowrap;
   }
   .sortb.on { background: var(--acc); color: #fff; }
+  /* 絞り込み入力（本棚・サーバ取込で共用） */
+  .filt {
+    flex: 1; min-width: 0;
+    -webkit-appearance: none; appearance: none;
+    border: none; border-radius: 8px;
+    background: rgba(255,255,255,.12); color: #eee;
+    padding: 6px 10px; font-size: 16px;   /* iOS は16px未満だとフォーカス時に画面が勝手に拡大する */
+    user-select: text; -webkit-user-select: text;   /* body の user-select:none を打ち消す */
+  }
+  .filt:focus { outline: none; background: rgba(255,255,255,.2); }
+  /* 自前の ✕ を出すのでネイティブのクリアボタンは消す（二重表示防止） */
+  .filt::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }
   #shelfList {
     max-height: 62vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
     display: grid; gap: 12px;
@@ -247,9 +259,16 @@
     <div class="swrow">
       <span id="countLbl">📚 0冊</span>
       <span class="sortbtns">
+        <button class="sortb" id="editBtn">編集</button>
+      </span>
+    </div>
+    <div class="swrow">
+      <input class="filt" id="shelfFilter" type="search" enterkeyhint="search" placeholder="🔍 絞り込み"
+             autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <button class="sortb" id="shelfFilterClear" title="絞り込み解除" style="display:none">✕</button>
+      <span class="sortbtns">
         <button class="sortb" id="sortName">名前</button>
         <button class="sortb" id="sortDate">追加日</button>
-        <button class="sortb" id="editBtn">編集</button>
       </span>
     </div>
     <div id="shelfList"></div>
@@ -270,6 +289,15 @@
     <button class="sortb" id="srvCfg">URL</button>
     <button class="ic" id="srvReload" title="更新">⟳</button>
     <button class="ic" id="srvClose" title="閉じる">✕</button>
+  </div>
+  <div class="swrow">
+    <input class="filt" id="srvFilter" type="search" enterkeyhint="search" placeholder="🔍 絞り込み"
+           autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button class="sortb" id="srvFilterClear" title="絞り込み解除" style="display:none">✕</button>
+    <span class="sortbtns">
+      <button class="sortb" id="srvSortName">名前</button>
+      <button class="sortb" id="srvSortDate">日付</button>
+    </span>
   </div>
   <div id="srvList"></div>
   <div id="srvHint">タップで本棚に取込み（✓=取込済み）。閲覧は本棚から。</div>
