@@ -136,6 +136,17 @@
   function canWrite() {
     return !!(window.FileSystemFileHandle && FileSystemFileHandle.prototype.createWritable);
   }
+  // OPFS は secure context 専用。http://<LANのIP>:8010/ で開くと未対応と同じ症状になるので、
+  // ブラウザのせいにせず「http で開いている」と言い当てる（実際にこれで一度ハマった）
+  function noWriteMsg() {
+    if (!window.isSecureContext) {
+      return "http:// で開いているため端末内保存が使えません。\n" +
+             "start-server.bat が表示する https:// の URL で開き直してください。\n" +
+             "（PC で確認中なら http://localhost:" + (location.port || "8010") + "/ でも可）";
+    }
+    return "このブラウザは端末内保存(createWritable)に未対応です。\n" +
+           "iOS 18.2 以降 / 最新の Safari・Chrome で使えます。";
+  }
 
   async function listBooks() {
     var root = await opfsRoot();
@@ -314,7 +325,7 @@
       return;
     }
     if (!canWrite()) {
-      alert("このブラウザは端末内保存(createWritable)に未対応です。\niOS 18.2 以降 / 最新の Safari・Chrome で使えます。");
+      alert(noWriteMsg());
       return;
     }
     $("loading").style.display = "flex";
@@ -409,7 +420,9 @@
     try {
       var lib = await ensurePdfjs();
       var buf = await file.arrayBuffer();
-      doc = await lib.getDocument({ data: buf }).promise;
+      // isEvalSupported:false は必須。既定(true)だと細工した PDF の FontMatrix から
+      // 任意 JS を実行される（CVE-2024-4367。同梱 pdf.js 3.11.174 は該当版）
+      doc = await lib.getDocument({ data: buf, isEvalSupported: false }).promise;
       return await renderPdfPage(doc, 1, THUMB_PX, 0.8);
     } catch (e) {
       console.error(e);
@@ -421,6 +434,19 @@
 
   // ---- サーバ取込（serve.py の https ポートをブラウズして DL → 本棚へ）----
   var srvUrl = localStorage.getItem("zsh_srv") || "";
+  // serve.py の共有キー。起動 URL の ?k= か、サーバ URL 入力時に切り出して保存する。
+  // これが無いと /list /thumb /zips は 403（LAN の他端末を締め出すため）。
+  var srvKey = (function () {
+    var m = /[?&]k=([^&#]+)/.exec(location.search);
+    if (!m) return localStorage.getItem("zsh_key") || "";
+    var v = decodeURIComponent(m[1]);
+    try { localStorage.setItem("zsh_key", v); } catch (e) {}
+    return v;
+  })();
+  function srvWithKey(url) {
+    if (!srvKey) return url;
+    return url + (url.indexOf("?") >= 0 ? "&" : "?") + "k=" + encodeURIComponent(srvKey);
+  }
   var srvDir = "";
   var shelfNames = {};       // 取込済み判定（renderShelf で更新）
   var srvThumbUrls = [];
@@ -468,15 +494,18 @@
     setSrvFilter("");
   }
 
-  // serve.py 自身から開いている(PC確認・LAN直開き)なら同じサーバを既定にする＝証明書不要
+  // serve.py 自身から開いている(PC確認・LAN直開き)なら同じサーバを既定にする＝証明書不要。
+  // それ以外の既定は空。LAN の IP は DHCP で変わるうえ、公開リポジトリに自宅の
+  // IP を焼き込まないため、serve.py が起動時に表示する URL を貼ってもらう。
   function defaultSrvUrl() {
-    return location.port ? location.origin : "https://192.168.11.15:8453";
+    return location.port ? location.origin : "";
   }
 
   function askSrvUrl() {
-    var v = prompt("PCサーバのURL（serve.py のポート）", srvUrl || defaultSrvUrl());
+    var cur = srvUrl ? srvUrl + (srvKey ? "/?k=" + encodeURIComponent(srvKey) : "") : defaultSrvUrl();
+    var v = prompt("PCサーバのURL（start-server.bat が表示する ?k= 付きの URL を貼る）", cur);
     if (!v) return false;
-    v = v.trim().replace(/\/+$/, "");
+    v = v.trim();
     if (!/^https?:\/\//i.test(v)) {
       alert("http:// または https:// で始まるURLを入力してください");
       return false;
@@ -487,8 +516,19 @@
       alert("このページが https なので、サーバも https:// が必要です（http は混在コンテンツとしてブロックされます）");
       return false;
     }
+    // serve.py が出す URL には共有キーが付いている。オリジンとキーに分けて保存する
+    var key = srvKey;
+    var qi = v.indexOf("?");
+    if (qi >= 0) {
+      var m = /[?&]k=([^&#]+)/.exec(v);
+      key = m ? decodeURIComponent(m[1]) : "";
+      v = v.slice(0, qi);
+    }
+    v = v.replace(/\/+$/, "");
     srvUrl = v;
+    srvKey = key;
     localStorage.setItem("zsh_srv", v);
+    localStorage.setItem("zsh_key", key);
     return true;
   }
 
@@ -511,7 +551,7 @@
     box.innerHTML = "<div style='opacity:.5;font-size:13px;grid-column:1/-1;text-align:center'>読み込み中...</div>";
     var data;
     try {
-      var res = await fetch(srvUrl + "/list?dir=" + encodeURIComponent(dir || ""), { cache: "no-store" });
+      var res = await fetch(srvWithKey(srvUrl + "/list?dir=" + encodeURIComponent(dir || "")), { cache: "no-store" });
       if (!res.ok) throw new Error("HTTP " + res.status);
       data = await res.json();
     } catch (e) {
@@ -525,6 +565,7 @@
       alert("サーバに接続できません。\n" +
         "・PC で start-server.bat が動いているか\n" +
         "・URL: " + srvUrl + " が正しいか\n" +
+        "・共有キー(?k=)を含む URL を「URL」ボタンで入れ直したか\n" +
         "・証明書を導入・信頼済みか（初回は Safari で http://<PCのIP>:8000/cert）\n" +
         "を確認してください。" + hint);
       return;
@@ -582,7 +623,7 @@
       if (job.kind === "pdf") {
         // pdf は zip のような範囲読みができないので、サーバ側(Windowsシェル)のサムネを借りる
         try {
-          var turl = srvUrl + "/thumb?path=" + encodeURIComponent(job.path) + "&t=" + (job.mtime || 0);
+          var turl = srvWithKey(srvUrl + "/thumb?path=" + encodeURIComponent(job.path) + "&t=" + (job.mtime || 0));
           await new Promise(function (res, rej) {
             var im = new Image();
             im.onload = res; im.onerror = rej;
@@ -596,7 +637,7 @@
         continue;
       }
       try {
-        var reader = new zip.ZipReader(new zip.HttpRangeReader(srvUrl + "/zips/" + encPath(job.path)));
+        var reader = new zip.ZipReader(new zip.HttpRangeReader(srvWithKey(srvUrl + "/zips/" + encPath(job.path))));
         var entries = await reader.getEntries();
         var first = null;
         for (var i = 0; i < entries.length; i++) {
@@ -621,14 +662,14 @@
   async function srvImport(rel, name) {
     if (shelfNames[name] && !confirm("「" + bookTitle(name) + "」は既にあります。上書きしますか？")) return;
     if (!canWrite()) {
-      alert("このブラウザは端末内保存(createWritable)に未対応です。\niOS 18.2 以降 / 最新の Safari・Chrome で使えます。");
+      alert(noWriteMsg());
       return;
     }
     $("loading").style.display = "flex";
     $("loadTxt").textContent = "DL中 : " + name;
     try {
       var root = await opfsRoot();
-      var res = await fetch(srvUrl + "/zips/" + encPath(rel), { cache: "no-store" });
+      var res = await fetch(srvWithKey(srvUrl + "/zips/" + encPath(rel)), { cache: "no-store" });
       if (!res.ok) throw new Error("HTTP " + res.status);
       var total = parseInt(res.headers.get("Content-Length"), 10) || 0;
       var fh = await root.getFileHandle(name, { create: true });
@@ -691,7 +732,8 @@
       if (PDF_RE.test(name)) {
         var lib = await ensurePdfjs();
         // pdf.js は本体を丸ごとメモリに載せる（zip の範囲読みのような遅延は効かない）
-        curPdf = await lib.getDocument({ data: await file.arrayBuffer() }).promise;
+        curPdf = await lib.getDocument({ data: await file.arrayBuffer(),
+                                        isEvalSupported: false }).promise;   // CVE-2024-4367
         for (var pn = 1; pn <= curPdf.numPages; pn++) slides.push({ name: "p" + pn, page: pn });
         curBook = name;
         finalizeLoad();
