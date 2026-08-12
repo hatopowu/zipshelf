@@ -1156,7 +1156,15 @@
 
   // 起動時：オフライン起動用 SW 登録＋ストレージ永続化を要求＋本棚描画
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js").catch(function () {});
+    var wasControlled = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register("./sw.js").then(function () {
+      return navigator.serviceWorker.ready;
+    }).then(function () {
+      if (!wasControlled) toast("オフライン起動の準備ができました");
+    }).catch(function (e) {
+      console.error("Service Worker registration failed", e);
+      toast("オフライン起動の準備に失敗しました");
+    });
   }
   try {
     // 許可されるとストレージ逼迫時の自動削除対象から外れやすくなる（非対応は無視）

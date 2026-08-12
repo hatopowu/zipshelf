@@ -1,7 +1,8 @@
 // オフライン起動用 Service Worker。
-// 方針＝ネットワーク優先(常に最新)・失敗時のみキャッシュ(オフライン起動)。
+// 方針＝起動資産はキャッシュ優先＋バックグラウンド更新(オフライン即時起動)。
 // ASSETS を増減したら VER を上げること。
-var VER = "zipshelf-v2";
+var CACHE_PREFIX = "zipshelf-";
+var VER = "zipshelf-v3";
 var ASSETS = [
   "./",
   "./index.html",
@@ -26,7 +27,11 @@ self.addEventListener("activate", function (e) {
   e.waitUntil(
     caches.keys()
       .then(function (keys) {
-        return Promise.all(keys.filter(function (k) { return k !== VER; })
+        // CacheStorage はオリジン単位。同じ GitHub Pages オリジンにある
+        // TextShelf など、別アプリのキャッシュは削除しない。
+        return Promise.all(keys.filter(function (k) {
+          return k.indexOf(CACHE_PREFIX) === 0 && k !== VER;
+        })
           .map(function (k) { return caches.delete(k); }));
       })
       .then(function () { return self.clients.claim(); })
@@ -35,19 +40,29 @@ self.addEventListener("activate", function (e) {
 
 self.addEventListener("fetch", function (e) {
   var req = e.request;
-  if (req.method !== "GET" || new URL(req.url).origin !== location.origin) return;
-  e.respondWith(
-    fetch(req).then(function (res) {
+  var url = new URL(req.url);
+  if (req.method !== "GET" || url.origin !== location.origin) return;
+
+  // serve.py と同一オリジンで開いた時も、取込APIや原本をアプリキャッシュへ複製しない。
+  if (url.pathname === "/list" || url.pathname === "/thumb" ||
+      url.pathname === "/cert" || url.pathname.indexOf("/zips/") === 0) return;
+
+  var cacheP = caches.open(VER);
+  var updateP = cacheP.then(function (cache) {
+    return fetch(req).then(function (res) {
       if (res && res.ok) {
-        var cp = res.clone();
-        caches.open(VER).then(function (c) { c.put(req, cp); });
+        return cache.put(req, res.clone()).then(function () { return res; });
       }
       return res;
-    }).catch(function () {
-      return caches.match(req, { ignoreSearch: true }).then(function (r) {
-        if (r) return r;
-        throw new Error("offline: " + req.url);
-      });
-    })
-  );
+    });
+  });
+  var responseP = cacheP.then(function (cache) {
+    return cache.match(req, { ignoreSearch: true });
+  }).then(function (cached) {
+    // キャッシュ済みなら即時返却。未キャッシュ時だけネットワークを待つ。
+    return cached || updateP;
+  });
+
+  e.waitUntil(updateP.catch(function () {}));
+  e.respondWith(responseP);
 });
