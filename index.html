@@ -77,6 +77,7 @@
   }
   .sortb.on { background: var(--acc); color: #fff; }
   /* 絞り込み入力（本棚・サーバ取込で共用） */
+  .swrow.search-row { position: relative; z-index: 10; }
   .filtbox { position: relative; flex: 1; min-width: 0; z-index: 2; }
   .filt {
     display: block; width: 100%; min-width: 0;
@@ -108,6 +109,7 @@
   .search-history-delete { width: 44px; flex: 0 0 44px; padding: 0; font-size: 18px; opacity: .7; }
   .search-history-word:active, .search-history-delete:active { background: rgba(255,255,255,.12); }
   #shelfList {
+    position: relative; z-index: 0;
     max-height: 62vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
     display: grid; gap: 12px;
     grid-template-columns: repeat(auto-fill, var(--thumb));
@@ -237,6 +239,7 @@
   #srv.hidden { display: none; }
   #srvPath { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #srvList {
+    position: relative; z-index: 0;
     display: grid; gap: 12px;
     grid-template-columns: repeat(auto-fill, var(--thumb));
     justify-content: center;
@@ -283,7 +286,7 @@
         <button class="sortb" id="editBtn">編集</button>
       </span>
     </div>
-    <div class="swrow">
+    <div class="swrow search-row">
       <div class="filtbox">
         <input class="filt" id="shelfFilter" type="search" enterkeyhint="search" placeholder="🔍 絞り込み"
                autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
@@ -315,7 +318,7 @@
     <button class="ic" id="srvReload" title="更新">⟳</button>
     <button class="ic" id="srvClose" title="閉じる">✕</button>
   </div>
-  <div class="swrow">
+  <div class="swrow search-row">
     <div class="filtbox">
       <input class="filt" id="srvFilter" type="search" enterkeyhint="search" placeholder="🔍 絞り込み"
              autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
