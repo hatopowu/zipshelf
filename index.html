@@ -233,34 +233,22 @@
   #srv {
     position: absolute; inset: 0; z-index: 36;
     display: flex; flex-direction: column; gap: 4px;
-    padding: calc(20px + env(safe-area-inset-top)) 18px calc(20px + env(safe-area-inset-bottom));
+    padding: calc(12px + env(safe-area-inset-top)) 18px env(safe-area-inset-bottom);
     background: #0d0a07;
-    overflow-y: auto; -webkit-overflow-scrolling: touch;
+    overflow: hidden;
   }
   #srv.hidden { display: none; }
   #srvPath { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #srvScroll {
+    flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
   #srvList {
     position: relative; z-index: 0;
     display: grid; gap: 12px;
     grid-template-columns: repeat(auto-fill, var(--thumb));
-    justify-content: center;
+    justify-content: center; align-content: start;
   }
   #srvHint { font-size: 11px; opacity: .45; text-align: center; margin-top: 12px; }
-  #srvTop {
-    position: absolute; z-index: 37;
-    top: calc(12px + env(safe-area-inset-top));
-    right: calc(12px + env(safe-area-inset-right));
-    width: 48px; height: 48px; border-radius: 50%;
-    appearance: none; border: 1px solid rgba(240,140,58,.7);
-    background: rgba(20,15,10,.82); color: var(--acc);
-    box-shadow: 0 3px 12px rgba(0,0,0,.5);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 25px; font-weight: 700;
-    opacity: 0; transform: scale(.85); pointer-events: none;
-    transition: opacity .15s, transform .15s;
-  }
-  #srvTop.show { opacity: 1; transform: scale(1); pointer-events: auto; }
-  #srvTop:active { background: var(--acc); color: #fff; }
 
   #loading {
     position: absolute; inset: 0; z-index: 40; display: none;
@@ -347,10 +335,11 @@
       <button class="sortb" id="srvSortDate">日付</button>
     </span>
   </div>
-  <div id="srvList"></div>
-  <div id="srvHint">タップで本棚に取込み（✓=取込済み）。閲覧は本棚から。</div>
+  <div id="srvScroll">
+    <div id="srvList"></div>
+    <div id="srvHint">タップで本棚に取込み（✓=取込済み）。閲覧は本棚から。</div>
+  </div>
 </div>
-<button id="srvTop" type="button" aria-label="一覧の先頭へ戻る" title="一覧の先頭へ戻る">↑</button>
 
 <div id="loading"><div class="spin"></div><div id="loadTxt">読み込み中...</div></div>
 

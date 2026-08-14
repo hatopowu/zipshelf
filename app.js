@@ -610,7 +610,7 @@
   // 読込中の1件は止めず、スクロール後の次の1件から優先順位を反映する。
   function prioritizeSrvThumbQueue() {
     if (srvThumbQueue.length < 2) return;
-    var viewport = $("srv").getBoundingClientRect();
+    var viewport = $("srvScroll").getBoundingClientRect();
     var middle = (viewport.top + viewport.bottom) / 2;
     srvThumbQueue = srvThumbQueue.map(function (job, order) {
       var rect = job.card.getBoundingClientRect();
@@ -680,20 +680,11 @@
   function openSrv() {
     if (!srvUrl && !askSrvUrl()) return;
     $("srv").classList.remove("hidden");
-    updateSrvTopButton();
     srvList(srvDir);
   }
 
-  function updateSrvTopButton() {
-    var srv = $("srv");
-    var topRow = srv.querySelector(".swrow");
-    var threshold = topRow ? topRow.offsetTop + topRow.offsetHeight : 80;
-    $("srvTop").classList.toggle("show",
-      !srv.classList.contains("hidden") && srv.scrollTop >= threshold);
-  }
   function jumpSrvTop() {
-    $("srv").scrollTop = 0;
-    updateSrvTopButton();
+    $("srvScroll").scrollTop = 0;
     scheduleSrvThumbPriority();
   }
   function closeSrv() {
@@ -702,7 +693,6 @@
     srvThumbUrls.forEach(function (u) { URL.revokeObjectURL(u); });
     srvThumbUrls = [];
     $("srv").classList.add("hidden");
-    $("srvTop").classList.remove("show");
     renderShelf();   // 取込結果を本棚へ反映
   }
 
@@ -773,7 +763,6 @@
     prioritizeSrvThumbQueue();
     srvThumbPriorityDirty = false;
     pumpSrvThumb();
-    updateSrvTopButton();
   }
 
   // zip の先頭画像を HTTP Range で範囲読みしてサムネにする（直列・LAN前提）
@@ -1174,11 +1163,7 @@
   $("sortDate").onclick = function () { setSort("date"); };
   $("srvSortName").onclick = function () { setSrvSort("name"); };
   $("srvSortDate").onclick = function () { setSrvSort("date"); };
-  $("srv").addEventListener("scroll", function () {
-    scheduleSrvThumbPriority();
-    updateSrvTopButton();
-  }, { passive: true });
-  $("srvTop").onclick = jumpSrvTop;
+  $("srvScroll").addEventListener("scroll", scheduleSrvThumbPriority, { passive: true });
   $("srvPath").onclick = jumpSrvTop;
 
   // 本棚の絞り込み：再描画せず表示/非表示を切り替えるだけなので即時でよい
