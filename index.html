@@ -20,6 +20,13 @@
     font-family: -apple-system, "Hiragino Kaku Gothic ProN", sans-serif;
     user-select: none; -webkit-user-select: none;
   }
+  /* iOS のステータスバー直下。OS がタップを Web 側へ渡す範囲で一覧の先頭へ戻す */
+  #topJump {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 38;
+    height: calc(18px + env(safe-area-inset-top));
+    appearance: none; border: none; padding: 0; background: transparent;
+  }
+  #topJump.hidden { display: none; }
   #stage {
     position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center;
@@ -69,6 +76,7 @@
   }
   .swrow .ic { width: 38px; height: 38px; font-size: 18px; flex-shrink: 0; }
   #countLbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #appTitle, #countLbl, #srvPath { cursor: pointer; }
   .sortbtns { display: flex; gap: 6px; flex-shrink: 0; }
   .sortb {
     appearance: none; border: none; border-radius: 8px;
@@ -262,6 +270,8 @@
 </head>
 <body>
 
+<button id="topJump" type="button" tabindex="-1" aria-label="一覧の先頭へ" title="一覧の先頭へ"></button>
+
 <div id="stage"><img id="pic" alt=""></div>
 
 <div class="zone" id="zoneL"></div>
@@ -277,11 +287,11 @@
 </svg>
 
 <div id="start">
-  <h1>ZipShelf</h1>
+  <h1 id="appTitle" title="一覧の先頭へ">ZipShelf</h1>
   <div id="nossl">⚠ この環境ではストレージ機能が使えません。<br>HTTPS（GitHub Pages 等）または localhost で開いてください。</div>
   <div id="shelfWrap">
     <div class="swrow">
-      <span id="countLbl">📚 0冊</span>
+      <span id="countLbl" title="一覧の先頭へ">📚 0冊</span>
       <span class="sortbtns">
         <button class="sortb" id="editBtn">編集</button>
       </span>
@@ -313,7 +323,7 @@
 <div id="srv" class="hidden">
   <div class="swrow">
     <button class="ic" id="srvUp" title="上へ" style="display:none">⬆</button>
-    <span id="srvPath">📁 (ルート)</span>
+    <span id="srvPath" title="一覧の先頭へ">📁 (ルート)</span>
     <button class="sortb" id="srvCfg">URL</button>
     <button class="ic" id="srvReload" title="更新">⟳</button>
     <button class="ic" id="srvClose" title="閉じる">✕</button>
