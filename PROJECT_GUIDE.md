@@ -39,9 +39,9 @@ ZipSlide の serve.py(PC) から LAN 経由で zip を DL して本棚に保存�
   1. **「URL」ボタンで `http://localhost:8010` に変える**(同一オリジン＝証明書不要。PC 確認はこれが一番早い。接続失敗の alert にもこの案内を出している)
   2. 先に `https://<LANのIP>:8453/` をブラウザで直接開いて警告を通しておく(オリジン毎・ブラウザ毎に必要。Firefox は Windows の証明書ストアを見ないので独自に例外登録が要る)
   - iPad は証明書プロファイルを導入済みなのでこの問題は出ない。
-- ブラウズ: `GET /list?dir=` でフォルダナビ(zip と pdf を表示・動画は無視)。サムネは zip.js HttpRangeReader で先頭画像を範囲読み(直列キュー・世代カウンタで打ち切り)。✓取込済み表示は本棚の名前一致。
+- ブラウズ: `GET /list?dir=` でフォルダナビ(zip と pdf を表示・動画は無視)。サムネは zip.js HttpRangeReader で先頭画像を範囲読み(直列キュー・世代カウンタで打ち切り)。未処理キューはスクロール時に可視カード優先へ並べ替え、現在位置から離れたカードを後回しにする。✓取込済み表示は本棚の名前一致。
 - ヘッダーは2段: 上段=⬆ + パス + URL + ⟳ + ✕、下段=**🔍絞り込み + 名前/日付ソート**(`srvSortKey`/`srvSortAsc` = localStorage `zsh_srvSort*`、本棚のソートとは独立)。`srvData` に `/list` の結果を保持し、ソート・絞り込みは再取得せず再描画。絞り込みは**フォルダ移動で自動解除**(⟳では保持)、入力は 150ms デバウンス(除外されたカードはサムネキューに積まない)。
-- DL: fetch → `res.body.getReader()` で OPFS createWritable にストリーム書き(全量をメモリに持たない・進捗%)。保存後は OPFS の実体から makeThumb(ピッカー取込と同じ経路)。
+- DL: fetch → `res.body.getReader()` で OPFS createWritable にストリーム書き(全量をメモリに持たない・進捗%)。保存後は OPFS の実体から makeThumb(ピッカー取込と同じ経路)。完了時は一覧を再取得せず対象カードの✓だけを更新し、DL前のスクロール位置と読込済みサムネを維持する。
 
 ## PDF 対応
 - ソース層だけ分岐し、ビューア(自動送り・RTL・先読み・ゲージ)は zip と完全共通。`slides[i]` が zip = `{name, entry}` / pdf = `{name, page}`、`getURL()` が「zip なら範囲展開・pdf なら該当ページを canvas 描画→jpeg blob」を吸収する。

@@ -563,6 +563,8 @@
   var srvThumbQueue = [];
   var srvThumbBusy = false;
   var srvThumbGen = 0;       // フォルダ移動・クローズでサムネ生成を打ち切る世代
+  var srvThumbSortFrame = 0;
+  var srvThumbPriorityDirty = false;
 
   var srvData = null;        // 現フォルダの取得結果（再ソート・絞り込みの再描画用）
   var srvFilter = "";        // 現フォルダ内の絞り込み（永続しない）
@@ -602,6 +604,39 @@
   function clearSrvFilter() {
     $("srvFilter").value = "";
     setSrvFilter("");
+  }
+
+  // 未処理サムネは、現在の画面内を先に、残りは画面に近い順に読む。
+  // 読込中の1件は止めず、スクロール後の次の1件から優先順位を反映する。
+  function prioritizeSrvThumbQueue() {
+    if (srvThumbQueue.length < 2) return;
+    var viewport = $("srv").getBoundingClientRect();
+    var middle = (viewport.top + viewport.bottom) / 2;
+    srvThumbQueue = srvThumbQueue.map(function (job, order) {
+      var rect = job.card.getBoundingClientRect();
+      var gap = rect.bottom < viewport.top
+        ? viewport.top - rect.bottom
+        : (rect.top > viewport.bottom ? rect.top - viewport.bottom : 0);
+      return {
+        job: job,
+        gap: gap,
+        centerGap: Math.abs((rect.top + rect.bottom) / 2 - middle),
+        order: order
+      };
+    }).sort(function (a, b) {
+      return a.gap - b.gap || a.centerGap - b.centerGap || a.order - b.order;
+    }).map(function (ranked) { return ranked.job; });
+  }
+
+  function scheduleSrvThumbPriority() {
+    srvThumbPriorityDirty = true;
+    if (srvThumbSortFrame || !srvThumbQueue.length) return;
+    srvThumbSortFrame = requestAnimationFrame(function () {
+      srvThumbSortFrame = 0;
+      if (!srvThumbPriorityDirty) return;
+      srvThumbPriorityDirty = false;
+      prioritizeSrvThumbQueue();
+    });
   }
 
   // serve.py 自身から開いている(PC確認・LAN直開き)なら同じサーバを既定にする＝証明書不要。
@@ -710,7 +745,7 @@
       var c = makeCard(bookIcon(it.name), bookTitle(it.name));
       c.querySelector(".sub").textContent =
         (shelfNames[it.name] ? "✓取込済 ・ " : "") + fmtSize(it.size);
-      c.onclick = function () { srvImport(rel, it.name); };
+      c.onclick = function () { srvImport(rel, it.name, c); };
       box.appendChild(c);
       srvThumbQueue.push({ card: c, path: rel, gen: srvThumbGen, kind: it.kind, mtime: it.mtime });
     });
@@ -720,6 +755,8 @@
       em.textContent = srvFilter ? "該当なし" : "からっぽです";
       box.appendChild(em);
     }
+    prioritizeSrvThumbQueue();
+    srvThumbPriorityDirty = false;
     pumpSrvThumb();
   }
 
@@ -728,6 +765,11 @@
     if (srvThumbBusy) return;
     srvThumbBusy = true;
     while (srvThumbQueue.length) {
+      // rAF より先に直前の読込が完了しても、次の1件には最新のスクロール位置を反映する。
+      if (srvThumbPriorityDirty) {
+        srvThumbPriorityDirty = false;
+        prioritizeSrvThumbQueue();
+      }
       var job = srvThumbQueue.shift();
       if (job.gen !== srvThumbGen) continue;
       if (job.kind === "pdf") {
@@ -769,7 +811,7 @@
     srvThumbBusy = false;
   }
 
-  async function srvImport(rel, name) {
+  async function srvImport(rel, name, card) {
     if (shelfNames[name] && !confirm("「" + bookTitle(name) + "」は既にあります。上書きしますか？")) return;
     if (!canWrite()) {
       alert(noWriteMsg());
@@ -817,8 +859,12 @@
       meta[name] = { added: Date.now(), size: saved.size, pos: 0, total: 0 };
       saveMeta();
       shelfNames[name] = 1;
+      // 一覧全体を再描画するとスクロール位置と読込済みサムネを失うため、対象だけ更新する。
+      if (card && card.isConnected) {
+        var sub = card.querySelector(".sub");
+        if (sub) sub.textContent = "✓取込済 ・ " + fmtSize(saved.size);
+      }
       toast("取込完了: " + bookTitle(name));
-      srvList(srvDir);   // ✓表示を更新
     } catch (e) {
       console.error(e);
       alert("取込失敗: " + name + "\n" + e.message);
@@ -1112,6 +1158,7 @@
   $("sortDate").onclick = function () { setSort("date"); };
   $("srvSortName").onclick = function () { setSrvSort("name"); };
   $("srvSortDate").onclick = function () { setSrvSort("date"); };
+  $("srv").addEventListener("scroll", scheduleSrvThumbPriority, { passive: true });
 
   // 本棚の絞り込み：再描画せず表示/非表示を切り替えるだけなので即時でよい
   $("shelfFilter").oninput = function () {
