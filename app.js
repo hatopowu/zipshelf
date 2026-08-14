@@ -178,6 +178,116 @@
     return q.split(/\s+/).every(function (w) { return n.indexOf(w) >= 0; });
   }
 
+  // 本棚とサーバ取込で共用する検索履歴。最近使った語を先頭にし、表記違いだけの重複は残さない。
+  var SEARCH_HISTORY_KEY = "zsh_searchHistory";
+  var SEARCH_HISTORY_MAX = 30;
+  var searchHistory = [];
+  var activeSearchHistory = null;
+  try {
+    var savedSearchHistory = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || "[]");
+    if (Array.isArray(savedSearchHistory)) {
+      searchHistory = savedSearchHistory.filter(function (v) {
+        return typeof v === "string" && !!v.trim();
+      }).slice(0, SEARCH_HISTORY_MAX);
+    }
+  } catch (e) { searchHistory = []; }
+
+  function saveSearchHistory() {
+    try { localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(searchHistory)); } catch (e) {}
+  }
+
+  function rememberSearchWord(value) {
+    var word = value.trim();
+    if (!word) return;
+    var key = word.toLowerCase();
+    searchHistory = searchHistory.filter(function (v) { return v.toLowerCase() !== key; });
+    searchHistory.unshift(word);
+    if (searchHistory.length > SEARCH_HISTORY_MAX) searchHistory.length = SEARCH_HISTORY_MAX;
+    saveSearchHistory();
+  }
+
+  function closeSearchHistory() {
+    if (!activeSearchHistory) return;
+    activeSearchHistory.list.hidden = true;
+    activeSearchHistory.input.setAttribute("aria-expanded", "false");
+    activeSearchHistory = null;
+  }
+
+  function renderSearchHistory(list, input) {
+    list.innerHTML = "";
+    searchHistory.forEach(function (word) {
+      var row = document.createElement("div");
+      row.className = "search-history-item";
+      row.setAttribute("role", "option");
+
+      var choose = document.createElement("button");
+      choose.type = "button";
+      choose.className = "search-history-word";
+      choose.textContent = word;
+      choose.title = word;
+      choose.onclick = function () {
+        input.value = word;
+        if (typeof input.oninput === "function") input.oninput();
+        rememberSearchWord(word);
+        closeSearchHistory();
+      };
+
+      var del = document.createElement("button");
+      del.type = "button";
+      del.className = "search-history-delete";
+      del.textContent = "×";
+      del.setAttribute("aria-label", "「" + word + "」を検索履歴から削除");
+      del.onclick = function (e) {
+        e.stopPropagation();
+        searchHistory = searchHistory.filter(function (v) { return v !== word; });
+        saveSearchHistory();
+        if (!searchHistory.length) closeSearchHistory();
+        else renderSearchHistory(list, input);
+      };
+
+      row.appendChild(choose);
+      row.appendChild(del);
+      list.appendChild(row);
+    });
+  }
+
+  function openSearchHistory(input) {
+    var list = $(input.getAttribute("aria-controls"));
+    if (!list || !searchHistory.length) { closeSearchHistory(); return; }
+    if (activeSearchHistory && activeSearchHistory.list !== list) closeSearchHistory();
+    renderSearchHistory(list, input);
+    list.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+    activeSearchHistory = { input: input, list: list };
+  }
+
+  function bindSearchHistory(input) {
+    input.addEventListener("pointerdown", function () { openSearchHistory(input); });
+    input.addEventListener("focus", function () { openSearchHistory(input); });
+    input.addEventListener("change", function () { rememberSearchWord(input.value); });
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        rememberSearchWord(input.value);
+        closeSearchHistory();
+        input.blur();
+      } else if (e.key === "Escape") {
+        closeSearchHistory();
+      }
+    });
+  }
+
+  // 欄外のタップや、Tab などで履歴欄外へフォーカスが移った時は操作を妨げず閉じる。
+  document.addEventListener("pointerdown", function (e) {
+    if (activeSearchHistory && !activeSearchHistory.list.parentElement.contains(e.target)) {
+      closeSearchHistory();
+    }
+  }, true);
+  document.addEventListener("focusin", function (e) {
+    if (activeSearchHistory && !activeSearchHistory.list.parentElement.contains(e.target)) {
+      closeSearchHistory();
+    }
+  });
+
   function applySort(arr) {
     var a = arr.slice();
     a.sort(function (x, y) {
@@ -905,7 +1015,16 @@
   }
 
   // ---- 再生制御 ----
-  function intervalMs() { return parseInt($("speed").value, 10) * 100; }
+  // スライダー値 → 秒。150(=15秒)までは 0.1 秒刻み、それ以上は 1 秒刻みで 255(=2分)まで。
+  // 全域を 0.1 秒刻みにすると目盛りが 1195 個になり、常用する数秒の範囲が数 px に潰れる。
+  function speedSec(v) { return v <= 150 ? v / 10 : v - 135; }
+  function speedLabel(v) {
+    var s = speedSec(v);
+    if (s < 60) return (v <= 150 ? s.toFixed(1) : String(s)) + " 秒";
+    var m = Math.floor(s / 60), r = s % 60;
+    return r ? m + " 分 " + r + " 秒" : m + " 分";
+  }
+  function intervalMs() { return Math.round(speedSec(parseInt($("speed").value, 10)) * 1000); }
 
   function restartTimer() {
     clearInterval(timer);
@@ -999,7 +1118,6 @@
     shelfFilter = this.value.trim().toLowerCase();
     applyShelfFilter();
   };
-  $("shelfFilter").onkeydown = function (e) { if (e.key === "Enter") this.blur(); };
   $("shelfFilterClear").onclick = function () {
     $("shelfFilter").value = "";
     shelfFilter = "";
@@ -1015,11 +1133,12 @@
     clearTimeout(srvFiltTimer);
     srvFiltTimer = setTimeout(function () { if (srvData) renderSrv(srvData); }, 150);
   };
-  $("srvFilter").onkeydown = function (e) { if (e.key === "Enter") this.blur(); };
   $("srvFilterClear").onclick = function () {
     clearSrvFilter();
     if (srvData) renderSrv(srvData);
   };
+  bindSearchHistory($("shelfFilter"));
+  bindSearchHistory($("srvFilter"));
   function setEditing(v) {
     editing = v;
     $("editBtn").textContent = editing ? "完了" : "編集";
@@ -1097,7 +1216,7 @@
   };
 
   $("speed").oninput = function () {
-    $("spdLbl").textContent = ($("speed").value / 10).toFixed(1) + " 秒";
+    $("spdLbl").textContent = speedLabel(parseInt($("speed").value, 10));
     localStorage.setItem("zsh_speed", $("speed").value);
     if (playing) { restartTimer(); startGauge(); }
   };
@@ -1149,7 +1268,7 @@
   $("rtlBtn").classList.toggle("on", rtl);
   $("gaugeBtn").classList.toggle("on", gaugeOn);
   $("speed").value = localStorage.getItem("zsh_speed") || "30";
-  $("spdLbl").textContent = ($("speed").value / 10).toFixed(1) + " 秒";
+  $("spdLbl").textContent = speedLabel(parseInt($("speed").value, 10));
   $("gop").value = gaugeOp;
   applyGaugeStyle();
   applyRtl();
