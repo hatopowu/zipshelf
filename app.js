@@ -680,19 +680,21 @@
   function openSrv() {
     if (!srvUrl && !askSrvUrl()) return;
     $("srv").classList.remove("hidden");
+    updateSrvTopButton();
     srvList(srvDir);
   }
 
-  // iOS のステータスバー自体は Web ページ外で直接検出できない。
-  // 直下の透明領域と一覧ヘッダーから、現在表示中の一覧を即座に先頭へ戻す。
-  function jumpListTop() {
-    if (!$("srv").classList.contains("hidden")) {
-      $("srv").scrollTop = 0;
-      scheduleSrvThumbPriority();
-      return;
-    }
-    $("start").scrollTop = 0;
-    $("shelfList").scrollTop = 0;
+  function updateSrvTopButton() {
+    var srv = $("srv");
+    var topRow = srv.querySelector(".swrow");
+    var threshold = topRow ? topRow.offsetTop + topRow.offsetHeight : 80;
+    $("srvTop").classList.toggle("show",
+      !srv.classList.contains("hidden") && srv.scrollTop >= threshold);
+  }
+  function jumpSrvTop() {
+    $("srv").scrollTop = 0;
+    updateSrvTopButton();
+    scheduleSrvThumbPriority();
   }
   function closeSrv() {
     srvThumbGen++;
@@ -700,6 +702,7 @@
     srvThumbUrls.forEach(function (u) { URL.revokeObjectURL(u); });
     srvThumbUrls = [];
     $("srv").classList.add("hidden");
+    $("srvTop").classList.remove("show");
     renderShelf();   // 取込結果を本棚へ反映
   }
 
@@ -770,6 +773,7 @@
     prioritizeSrvThumbQueue();
     srvThumbPriorityDirty = false;
     pumpSrvThumb();
+    updateSrvTopButton();
   }
 
   // zip の先頭画像を HTTP Range で範囲読みしてサムネにする（直列・LAN前提）
@@ -886,7 +890,6 @@
 
   // ---- 本を開く ----
   async function openBook(name) {
-    $("topJump").classList.add("hidden");
     $("start").style.display = "none";
     $("loading").style.display = "flex";
     $("loadTxt").textContent = "目次を読み込み中 : " + name;
@@ -929,7 +932,6 @@
       $("loading").style.display = "none";
       alert("読み込み失敗: " + name + "\n" + e.message);
       $("start").style.display = "flex";
-      $("topJump").classList.remove("hidden");
       return;
     }
     curBook = name;
@@ -941,7 +943,6 @@
     if (!slides.length) {
       alert("画像が見つかりませんでした。");
       $("start").style.display = "flex";
-      $("topJump").classList.remove("hidden");
       curBook = "";
       return;
     }
@@ -981,7 +982,6 @@
     closePdf();
     slides = []; order = []; curBook = "";
     $("start").style.display = "flex";
-    $("topJump").classList.remove("hidden");
     renderShelf();
   }
 
@@ -1174,11 +1174,12 @@
   $("sortDate").onclick = function () { setSort("date"); };
   $("srvSortName").onclick = function () { setSrvSort("name"); };
   $("srvSortDate").onclick = function () { setSrvSort("date"); };
-  $("srv").addEventListener("scroll", scheduleSrvThumbPriority, { passive: true });
-  $("topJump").onclick = jumpListTop;
-  $("appTitle").onclick = jumpListTop;
-  $("countLbl").onclick = jumpListTop;
-  $("srvPath").onclick = jumpListTop;
+  $("srv").addEventListener("scroll", function () {
+    scheduleSrvThumbPriority();
+    updateSrvTopButton();
+  }, { passive: true });
+  $("srvTop").onclick = jumpSrvTop;
+  $("srvPath").onclick = jumpSrvTop;
 
   // 本棚の絞り込み：再描画せず表示/非表示を切り替えるだけなので即時でよい
   $("shelfFilter").oninput = function () {
